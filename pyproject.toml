@@ -1,0 +1,13 @@
+# pyproject.toml  (in project root)
+
+[build-system]
+requires = ["hatchling"]          # or "setuptools" if you prefer
+build-backend = "hatchling.build" # or "setuptools.build_meta"
+
+[project]
+name = "SISRI"                # your package name (can be anything)
+version = "0.1.0"
+dependencies = []                 # optional: list runtime deps here if you want
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]                # tells it to package src/ as the namespace

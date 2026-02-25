@@ -1,0 +1,11 @@
+pandas
+openpyxl
+pyodbc  # Optional for SQL verification
+psycopg2-binary  # For PostgreSQL
+pyyaml
+python-dotenv
+
+############
+# To install all requirements
+#pip install -r requirements.txt
+############
