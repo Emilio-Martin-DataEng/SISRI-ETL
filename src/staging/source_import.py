@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime
 import pyodbc
 import csv
+import shutil                     # For archiving files
 
 from src.config import BASE_PATH, get_db_config, get_config
 from src.utils.db import upload_via_bcp
@@ -15,10 +16,12 @@ def process_source(source_name: str):
     """
     Generic ETL processor for any dimension/source configured in the database.
     
-    - One audit record per source (not per file)
-    - Row_Count = total rows loaded for this source (across all its files)
-    - Fetches real Source_Import_SK from dim table
+    - One audit record per source (correct grain)
+    - Row_Count = total rows loaded for that source (across all files)
+    - Fetches and uses real Source_Import_SK
     - Truncates staging table before load to prevent PK dupes
+    - Archives original Excel files with datetime suffix after success
+    - Skips gracefully if no files (logs "Nothing to update" in audit)
     """
     print(f"Starting ETL process for source: {source_name}")
 
@@ -27,7 +30,7 @@ def process_source(source_name: str):
     audit_id = get_next_audit_import_id()
     log_audit_source_import(
         audit_id=audit_id,
-        source_import_sk=0,  # will update with real SK later
+        source_import_sk=0,
         start_time=start_time,
         end_time=None,
         row_count=0,
@@ -38,7 +41,7 @@ def process_source(source_name: str):
     total_rows = 0
 
     try:
-        # === STEP 1: Fetch source and column mapping config ===
+        # Fetch config from dim tables
         db_cfg = get_db_config()
         conn_str = (
             f"DRIVER={{ODBC Driver 17 for SQL Server}};"
@@ -60,7 +63,6 @@ def process_source(source_name: str):
             raise ValueError(f"No active configuration found for source: {source_name}")
         
         rel_path, pattern, sheet_name, table_name = row
-        print(f"Config found: path={rel_path}, pattern={pattern}, sheet={sheet_name}, table={table_name}")
 
         cursor.execute("""
             SELECT Source_Column, Target_Column
@@ -69,7 +71,7 @@ def process_source(source_name: str):
         """, source_name)
         column_map = {r.Source_Column: r.Target_Column for r in cursor.fetchall()}
 
-        # Fetch real Source_Import_SK for this source
+        # Fetch real Source_Import_SK
         cursor.execute("""
             SELECT Source_Import_SK 
             FROM ETL.Dim_Source_Imports 
@@ -82,7 +84,7 @@ def process_source(source_name: str):
         cursor.close()
         conn.close()
 
-        # Update audit with real SK immediately
+        # Update audit with real SK
         log_audit_source_import(
             audit_id=audit_id,
             source_import_sk=real_sk,
@@ -92,16 +94,26 @@ def process_source(source_name: str):
             exception_detail=f"Processing {source_name}"
         )
 
-        # === STEP 2: Find all matching files ===
+        # Find files
         folder = BASE_PATH() / rel_path
         all_files = list(folder.glob(pattern))
         
         if not all_files:
-            raise FileNotFoundError(f"No files found in {folder} matching '{pattern}'")
+            end_time = datetime.now()
+            log_audit_source_import(
+                audit_id=audit_id,
+                source_import_sk=real_sk,
+                start_time=start_time,
+                end_time=end_time,
+                row_count=0,
+                exception_detail="Nothing to update - no files matched pattern"
+            )
+            print(f"[SKIP] No files found for {source_name} - logged as 'Nothing to update'")
+            return  # Graceful skip, continue orchestration
 
         print(f"Found {len(all_files)} file(s) to process.")
 
-        # === STEP 3: Load and combine files ===
+        # Load and combine files
         dfs = []
         for file in all_files:
             try:
@@ -117,14 +129,12 @@ def process_source(source_name: str):
 
         final_df = pd.concat(dfs, ignore_index=True)
         final_df = final_df.drop_duplicates()
-        print(f"Combined {len(final_df)} rows after deduplication (across all files).")
+        print(f"Combined {len(final_df)} rows after deduplication.")
 
-        # === STEP 4: Apply column mapping ===
         if column_map:
             final_df = final_df.rename(columns=column_map)
             print(f"Applied column mapping: {len(column_map)} columns renamed.")
 
-        # Safeguard
         if 'Inserted_Datetime' in final_df.columns:
             final_df = final_df.drop(columns=['Inserted_Datetime'])
 
@@ -136,7 +146,7 @@ def process_source(source_name: str):
 
         print(f"Final columns kept: {final_df.columns.tolist()}")
 
-        # === STEP 5: Export ===
+        # Export
         temp_dir = Path("temp")
         temp_dir.mkdir(exist_ok=True)
         output_path = temp_dir / f"{source_name.lower()}_stg.txt"
@@ -153,7 +163,7 @@ def process_source(source_name: str):
             na_rep=''
         )
 
-        # === STEP 6: Load via BCP ===
+        # Load via BCP
         config_folder = BASE_PATH() / get_config("base", "config_folder")
         format_path = config_folder / "format" / f"{source_name.lower()}.fmt"
         
@@ -162,7 +172,7 @@ def process_source(source_name: str):
         
         print(f"[DEBUG] Using format file: {format_path}")
         
-        truncate_table(table_name)  # Clear staging before load
+        truncate_table(table_name)
 
         upload_via_bcp(
             file_path=output_path,
@@ -172,7 +182,21 @@ def process_source(source_name: str):
             first_row=1
         )
 
-        # === STEP 7: Success - finalize source audit ===
+        # === ARCHIVING with datetime suffix ===
+        archive_base = BASE_PATH() / "archive" / "raw" / datetime.now().strftime("%Y-%m-%d")
+        archive_dir = archive_base / source_name
+        archive_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp_suffix = datetime.now().strftime("_%Y%m%d_%H%M%S")
+        archived_files = []
+        for file in all_files:
+            archive_filename = file.stem + timestamp_suffix + file.suffix
+            archive_path = archive_dir / archive_filename
+            shutil.move(str(file), str(archive_path))
+            archived_files.append(str(archive_path))
+            print(f"Archived: {file.name} → {archive_path}")
+
+        # === SUCCESS - finalize audit ===
         end_time = datetime.now()
         row_count = len(final_df)
         log_audit_source_import(
@@ -181,7 +205,8 @@ def process_source(source_name: str):
             start_time=start_time,
             end_time=end_time,
             row_count=row_count,
-            exception_detail=f"Processed {len(all_files)} files, total rows: {row_count}"
+            exception_detail=f"Processed {len(all_files)} files, total rows: {row_count}",
+            archive_file_name=", ".join(archived_files)  # comma-separated list of archived paths
         )
         print(f"Successfully uploaded {row_count} records for {source_name} to {table_name}")
 
@@ -202,3 +227,5 @@ def process_source(source_name: str):
 if __name__ == "__main__":
     process_source("Source_Imports")
     process_source("Source_File_Mapping")
+
+    # Test commit after push

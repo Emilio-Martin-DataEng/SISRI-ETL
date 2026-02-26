@@ -5,7 +5,7 @@
 # - Truncating tables
 # - Executing stored procedures
 # - Generating unique audit IDs (real insert, no dummy delete)
-# - Logging/updating audit records
+# - Logging/updating audit records (including archive_file_name)
 
 import pyodbc
 from datetime import datetime
@@ -81,7 +81,7 @@ def get_next_audit_import_id() -> int:
     cursor = conn.cursor()
     
     try:
-        # Step 1: Insert the real audit row (no result set)
+        # Step 1: Insert the real audit row (minimal data)
         cursor.execute("""
             INSERT INTO ETL.Fact_Audit_Source_Imports (Source_Import_SK, Start_Time)
             VALUES (0, GETDATE());
@@ -115,12 +115,11 @@ def log_audit_source_import(
     start_time: datetime,
     end_time: datetime = None,
     row_count: int = 0,
-    exception_detail: str = None
+    exception_detail: str = None,
+    archive_file_name: str = None  # Added - for lineage
 ):
     """
-    Updates the existing audit entry with end time, row count, and exception detail.
-    - First call (start): inserts minimal row and returns ID
-    - Second call (end): updates the row with completion info
+    Updates the audit entry with end time, row count, exception detail, and archive_file_name.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -132,7 +131,8 @@ def log_audit_source_import(
             Start_Time          = ?,
             End_Time            = ?,
             Row_Count           = ?,
-            Exception_Detail    = ?
+            Exception_Detail    = ?,
+            archive_file_name   = ?
         WHERE Audit_Source_Import_SK = ?
     """, 
     source_import_sk,
@@ -140,6 +140,7 @@ def log_audit_source_import(
     end_time,
     row_count,
     exception_detail,
+    archive_file_name,
     audit_id
     )
     
