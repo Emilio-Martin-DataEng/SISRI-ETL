@@ -1,10 +1,18 @@
 # src/staging/etl_config.py
 
+"""
+Meta-loader / config bootstrapper for the ETL system.
+- Loads config from Excel → staging tables via BCP
+- Merges staging to dimension tables via stored procedures
+- Gracefully skips if config file is missing
+- Uses stored procedures for truncate and merge operations
+- Logs audit start + success/failure with real SK
+"""
+
 from pathlib import Path
 import pandas as pd
 import csv
 from datetime import datetime
-import pyodbc
 
 from src.config import BASE_PATH, get_db_config, get_config
 from src.utils.db import upload_via_bcp
@@ -13,7 +21,8 @@ from src.utils.db_ops import (
     execute_proc,
     log_audit_source_import,
     get_next_audit_import_id,
-    get_connection  # Now imported for SK fetch
+    get_connection,
+    get_source_import_sk
 )
 
 
@@ -22,6 +31,11 @@ def process_etl_config():
     Loads ETL configuration from Excel into staging tables,
     merges to dimension tables via stored procedures,
     and logs the process to audit table.
+    
+    Graceful skip if config file is missing:
+    - Creates audit entry with "Nothing to update - config spreadsheet not found"
+    - Exits without raising exception
+    - Allows orchestrator to continue with other sources
     """
     start_time = datetime.now()
     audit_id = get_next_audit_import_id()
@@ -36,17 +50,30 @@ def process_etl_config():
     print(f"Started audit log entry: Audit_Source_Import_SK = {audit_id}")
 
     try:
+        # === Locate config file ===
         config_folder = BASE_PATH() / get_config("base", "config_folder")
         config_filename = get_config("base", "config_filename")
         
         config_files = list(config_folder.glob(config_filename))
         
         if not config_files:
-            raise FileNotFoundError(f"Config spreadsheet not found: {config_folder / config_filename}")
-        
+            end_time = datetime.now()
+            log_audit_source_import(
+                audit_id=audit_id,
+                source_import_sk=0,
+                start_time=start_time,
+                end_time=end_time,
+                row_count=0,
+                exception_detail="Nothing to update - config spreadsheet not found"
+            )
+            print(f"[GRACEFUL SKIP] Config spreadsheet not found: {config_folder / config_filename}")
+            print("Continuing ETL run without config refresh")
+            return  # Exit cleanly - no crash
+
         config_file = config_files[0]
         print(f"Loading config from: {config_file}")
 
+        # Format file paths
         format_dir = config_folder / "format"
         format_imports = format_dir / "source_imports.fmt"
         format_mapping = format_dir / "source_file_mapping.fmt"
@@ -57,6 +84,7 @@ def process_etl_config():
         print(f"  - Source_Imports: {format_imports}")
         print(f"  - Source_File_Mapping: {format_mapping}")
 
+        # Read sheets
         df_imports = pd.read_excel(config_file, sheet_name="Source_Imports", dtype=str)
         df_mapping = pd.read_excel(config_file, sheet_name="Source_File_Mapping", dtype=str)
 
@@ -67,6 +95,7 @@ def process_etl_config():
         df_imports['Inserted_Datetime'] = now_str
         df_mapping['Inserted_Datetime'] = now_str
 
+        # Prepare text files
         temp_dir = Path("temp")
         temp_dir.mkdir(exist_ok=True)
         
@@ -99,9 +128,11 @@ def process_etl_config():
 
         db_cfg = get_db_config()
 
+        # Truncate staging tables via stored procedure
         truncate_table('ETL.Source_Imports')
         truncate_table('ETL.Source_File_Mapping')
 
+        # BCP load
         print("Loading Source_Imports table...")
         upload_via_bcp(
             file_path=imports_path,
@@ -120,25 +151,16 @@ def process_etl_config():
             first_row=1
         )
 
+        # Merge via stored procedures
         print("Merging staging to dimension tables...")
         execute_proc('ETL.SP_Merge_Dim_Source_Imports')
         execute_proc('ETL.SP_Merge_Dim_Source_Imports_Mapping')
 
-        # Fetch real Source_Import_SK for 'Source_Imports'
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT Source_Import_SK 
-            FROM ETL.Dim_Source_Imports 
-            WHERE Source_Name = 'Source_Imports'
-        """)
-        sk_row = cursor.fetchone()
-        real_sk = sk_row[0] if sk_row else 0
-        cursor.close()
-        conn.close()
+        # Fetch real SK for 'Source_Imports'
+        real_sk = get_source_import_sk('Source_Imports')
         print(f"[DEBUG] Real Source_Import_SK for config: {real_sk}")
 
-        # Update audit with real SK + success data
+        # Success audit update
         end_time = datetime.now()
         row_count = len(df_imports) + len(df_mapping)
         log_audit_source_import(
@@ -162,7 +184,7 @@ def process_etl_config():
             exception_detail=str(e)
         )
         print(f"ETL config failed: {e}")
-        raise
+        raise  # Raise other errors so orchestrator knows
 
 
 if __name__ == "__main__":

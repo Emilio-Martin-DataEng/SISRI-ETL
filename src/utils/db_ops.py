@@ -14,38 +14,31 @@ from src.config import get_db_config
 
 
 def get_connection():
-    """
-    Creates and returns a new pyodbc connection to the database.
-    Uses settings from config.yaml.
-    """
     db_cfg = get_db_config()
-    
     conn_str = (
         f"DRIVER={{ODBC Driver 17 for SQL Server}};"
         f"SERVER={db_cfg['server']};"
         f"DATABASE={db_cfg['database']};"
         f"UID={db_cfg['username']};"
-        f"PWD={db_cfg['password']}"
+        f"PWD={db_cfg['password']};"
+        f"AUTOCOMMIT=ON"  # Prevents lingering transactions
     )
-    
     return pyodbc.connect(conn_str)
 
-
 def truncate_table(table_name: str):
-    """
-    Truncates (deletes all rows from) the specified table.
-    Useful before loading fresh data into staging tables.
-    """
     conn = get_connection()
     cursor = conn.cursor()
-    
-    cursor.execute(f"TRUNCATE TABLE {table_name}")
-    conn.commit()
-    
-    cursor.close()
-    conn.close()
-    
-    print(f"Truncated table: {table_name}")
+    try:
+        cursor.execute(f"TRUNCATE TABLE {table_name}")
+        conn.commit()
+        print(f"Truncated table: {table_name}")
+    except Exception as e:
+        conn.rollback()
+        print(f"Truncate failed for {table_name}: {e}")
+        raise  # Let caller handle
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def execute_proc(proc_name: str, params: str = None):
@@ -70,6 +63,16 @@ def execute_proc(proc_name: str, params: str = None):
     conn.close()
     
     print(f"Executed stored procedure: {proc_name}")
+
+def get_source_import_sk(source_name: str) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT Source_Import_SK FROM ETL.Dim_Source_Imports WHERE Source_Name = ?", source_name)
+    row = cursor.fetchone()
+    sk = row[0] if row else 0
+    cursor.close()
+    conn.close()
+    return sk
 
 
 def get_next_audit_import_id() -> int:
@@ -149,3 +152,4 @@ def log_audit_source_import(
     conn.close()
     
     print(f"Audit updated for Audit_Source_Import_SK = {audit_id}")
+
