@@ -9,7 +9,13 @@ import shutil
 
 from src.config import BASE_PATH, get_db_config, get_config
 from src.utils.db import upload_via_bcp
-from src.utils.db_ops import get_next_audit_import_id, log_audit_source_import, truncate_table
+from src.utils.db_ops import (
+    get_next_audit_import_id,
+    insert_source_file_archive,
+    log_audit_source_import,
+    truncate_table,
+    get_connection
+)
 
 
 def process_source(source_name: str):
@@ -20,9 +26,14 @@ def process_source(source_name: str):
         source_import_sk=0,
         start_time=start_time,
         end_time=None,
-        row_count=0,
-        exception_detail=None
+        total_row_count=0,
+        total_file_count=0,
+        exception_detail=None,
+        pattern=None,
+        process_status='Started'
     )
+
+    real_sk = 0  # Default in case of early failure
 
     try:
         db_cfg = get_db_config()
@@ -36,31 +47,23 @@ def process_source(source_name: str):
         conn = pyodbc.connect(conn_str)
         cursor = conn.cursor()
 
-        cursor.execute("""
-            SELECT Rel_Path, Pattern, Sheet_Name, Staging_Table
-            FROM ETL.Dim_Source_Imports
-            WHERE Source_Name = ? AND Is_Active = 1 AND Is_Deleted = 0
-        """, source_name)
+        # Get config
+        cursor.execute("EXEC ETL.SP_Get_Source_Import_Config ?", source_name)
         row = cursor.fetchone()
         if not row:
             raise ValueError(f"No active configuration found for source: {source_name}")
         
         rel_path, pattern, sheet_name, table_name = row
 
-        cursor.execute("""
-            SELECT Source_Column, Target_Column
-            FROM ETL.Dim_Source_Imports_Mapping
-            WHERE Source_Name = ? AND Is_Deleted = 0
-        """, source_name)
-        column_map = {r.Source_Column: r.Target_Column for r in cursor.fetchall()}
+        # Get mapping
+        cursor.execute("EXEC ETL.SP_Get_Source_Import_Mapping ?", source_name)
+        mappings = cursor.fetchall()
+        column_map = {m.Source_Column: m.Target_Column for m in mappings}
 
-        cursor.execute("""
-            SELECT Source_Import_SK 
-            FROM ETL.Dim_Source_Imports 
-            WHERE Source_Name = ?
-        """, source_name)
-        sk_row = cursor.fetchone()
-        real_sk = sk_row[0] if sk_row else 0
+        # Get real SK
+        cursor.execute("EXEC ETL.SP_Get_Source_Import_SK ?", source_name)
+        row = cursor.fetchone()
+        real_sk = row[0] if row else 0
 
         cursor.close()
         conn.close()
@@ -70,8 +73,11 @@ def process_source(source_name: str):
             source_import_sk=real_sk,
             start_time=start_time,
             end_time=None,
-            row_count=0,
-            exception_detail=f"Processing {source_name}"
+            total_row_count=0,
+            total_file_count=0,
+            exception_detail=f"Processing {source_name}",
+            pattern=pattern,
+            process_status='Processing'
         )
 
         folder = BASE_PATH() / rel_path
@@ -84,17 +90,24 @@ def process_source(source_name: str):
                 source_import_sk=real_sk,
                 start_time=start_time,
                 end_time=end_time,
-                row_count=0,
-                exception_detail="Nothing to update - no files matched pattern"
+                total_row_count=0,
+                total_file_count=0,
+                exception_detail="Nothing to update - no files matched pattern",
+                pattern=pattern,
+                process_status='Skipped'
             )
             return
 
         dfs = []
+        file_row_counts = []
         for file in all_files:
             try:
                 df = pd.read_excel(file, sheet_name=sheet_name, dtype=str)
+                file_rows = len(df)
                 dfs.append(df)
+                file_row_counts.append(file_rows)
             except Exception as e:
+                file_row_counts.append(0)
                 continue
 
         if not dfs:
@@ -147,7 +160,7 @@ def process_source(source_name: str):
             first_row=1
         )
 
-        # === ARCHIVING + LINEAGE + BRIDGE ===
+        # === ARCHIVING + LINEAGE ===
         archive_base = BASE_PATH() / "archive" / "raw" / datetime.now().strftime("%Y-%m-%d")
         archive_dir = archive_base / source_name
         archive_dir.mkdir(parents=True, exist_ok=True)
@@ -156,63 +169,40 @@ def process_source(source_name: str):
         conn = pyodbc.connect(conn_str)
         cursor = conn.cursor()
 
-        for file in all_files:
+        total_file_count = len(all_files)
+        total_row_count = len(final_df)
+
+        for idx, file in enumerate(all_files):
             archive_filename = file.stem + timestamp_suffix + file.suffix
             archive_path = archive_dir / archive_filename
             shutil.copy(str(file), str(archive_path))
 
-            # Insert lineage and capture SK
-            cursor.execute("""
-                DECLARE @NewSK INT;
-                EXEC [ETL].[SP_Insert_Source_File_Archive]
-                    @Audit_Source_Import_SK = ?,
-                    @Source_Import_SK = ?,
-                    @Original_File_Name = ?,
-                    @Archive_File_Name = ?,
-                    @Archive_Full_Path = ?,
-                    @File_Row_Count = ?,
-                    @Process_Status = ?,
-                    @Source_File_Archive_SK = @NewSK OUTPUT;
-                SELECT @NewSK;
-            """, 
-            audit_id,
-            real_sk,
-            file.name,
-            archive_filename,
-            str(archive_path),
-            len(final_df) // len(all_files),
-            'Success'
-            )
-
-            archive_sk = cursor.fetchone()[0]
-
-            # Insert bridge record
-            cursor.execute("""
-                EXEC [ETL].[SP_Insert_Bridge_Audit_File_Archive]
-                    @Audit_Source_Import_SK = ?,
-                    @Source_File_Archive_SK = ?,
-                    @Caller_Source_Import_SK = ?,
-                    @Caller_Audit_Source_Import_SK = ?
-            """, 
-            audit_id,
-            archive_sk,
-            real_sk,
-            audit_id
+            new_archive_sk = insert_source_file_archive(
+                    audit_id=audit_id,
+                    source_import_sk=real_sk,
+                    original_file_name=file.name,
+                    archive_file_name=archive_filename,
+                    archive_full_path=str(archive_path),
+                    file_row_count=file_row_counts[idx],
+                    process_status='Success'
             )
 
         conn.commit()
         cursor.close()
         conn.close()
 
+        # === SUCCESS AUDIT ===
         end_time = datetime.now()
-        row_count = len(final_df)
         log_audit_source_import(
             audit_id=audit_id,
             source_import_sk=real_sk,
             start_time=start_time,
             end_time=end_time,
-            row_count=row_count,
-            exception_detail=f"Processed {len(all_files)} files, total rows: {row_count}"
+            total_row_count=total_row_count,
+            total_file_count=total_file_count,
+            exception_detail=f"Processed {total_file_count} files, total rows: {total_row_count}",
+            pattern=pattern,
+            process_status='Success'
         )
 
     except Exception as e:
@@ -222,8 +212,11 @@ def process_source(source_name: str):
             source_import_sk=real_sk,
             start_time=start_time,
             end_time=end_time,
-            row_count=0,
-            exception_detail=str(e)
+            total_row_count=0,
+            total_file_count=0,
+            exception_detail=str(e),
+            pattern=pattern,
+            process_status='Failed'
         )
         raise
 

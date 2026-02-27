@@ -112,38 +112,43 @@ def get_next_audit_import_id() -> int:
         conn.close()
 
 
+# src/utils/db_ops.py (excerpt – replace the function)
+
 def log_audit_source_import(
     audit_id: int,
     source_import_sk: int,
     start_time: datetime,
     end_time: datetime = None,
-    row_count: int = 0,
+    total_row_count: int = 0,
+    total_file_count: int = 0,
     exception_detail: str = None,
-    archive_file_name: str = None  # Added - for lineage
+    pattern: str = None,
+    process_status: str = 'Success'
 ):
-    """
-    Updates the audit entry with end time, row count, exception detail, and archive_file_name.
-    """
     conn = get_connection()
     cursor = conn.cursor()
     
     cursor.execute("""
-        UPDATE ETL.Fact_Audit_Source_Imports
+        UPDATE [ETL].[Fact_Audit_Source_Imports]
         SET 
-            Source_Import_SK    = ?,
-            Start_Time          = ?,
-            End_Time            = ?,
-            Row_Count           = ?,
-            Exception_Detail    = ?,
-            archive_file_name   = ?
+            Source_Import_SK     = ?,
+            Start_Time           = ?,
+            End_Time             = ?,
+            Total_Row_Count      = ?,
+            Total_File_Count     = ?,
+            Exception_Detail     = ?,
+            Pattern              = ?,
+            Process_Status       = ?
         WHERE Audit_Source_Import_SK = ?
     """, 
     source_import_sk,
     start_time,
     end_time,
-    row_count,
+    total_row_count,
+    total_file_count,
     exception_detail,
-    archive_file_name,
+    pattern,
+    process_status,
     audit_id
     )
     
@@ -152,4 +157,51 @@ def log_audit_source_import(
     conn.close()
     
     print(f"Audit updated for Audit_Source_Import_SK = {audit_id}")
+
+def insert_source_file_archive(
+    audit_id: int,
+    source_import_sk: int,
+    original_file_name: str,
+    archive_file_name: str,
+    archive_full_path: str,
+    file_row_count: int = None,
+    process_status: str = 'Success'
+):
+    """
+    Inserts one record into Fact_Source_File_Archive using the stored procedure.
+    Returns the new Source_File_Archive_SK.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    new_sk = 0  # placeholder for OUTPUT
+    
+    cursor.execute("""
+        EXEC [ETL].[SP_Insert_Source_File_Archive]
+            @Audit_Source_Import_SK = ?,
+            @Source_Import_SK = ?,
+            @Original_File_Name = ?,
+            @Archive_File_Name = ?,
+            @Archive_Full_Path = ?,
+            @File_Row_Count = ?,
+            @Process_Status = ?,
+            @Source_File_Archive_SK = ? OUTPUT
+    """,
+    audit_id,
+    source_import_sk,
+    original_file_name,
+    archive_file_name,
+    archive_full_path,
+    file_row_count,
+    process_status,
+    new_sk
+    )
+    
+    
+    
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    return new_sk
 
