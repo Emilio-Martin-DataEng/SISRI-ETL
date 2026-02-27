@@ -1,0 +1,10 @@
+14.0
+8
+1       SQLCHAR             0       500     "\t"       1     Principle_Code                                         SQL_Latin1_General_CP1_CI_AS
+2       SQLCHAR             0       500     "\t"       2     Principle_Name                                         SQL_Latin1_General_CP1_CI_AS
+3       SQLCHAR             0       500     "\t"       3     Principle_Trading_As_Name                              SQL_Latin1_General_CP1_CI_AS
+4       SQLCHAR             0       500     "\t"       4     Principle_Address                                      SQL_Latin1_General_CP1_CI_AS
+5       SQLCHAR             0       500     "\t"       5     Principle_City                                         SQL_Latin1_General_CP1_CI_AS
+6       SQLCHAR             0       500     "\t"       6     Principle_Province                                     SQL_Latin1_General_CP1_CI_AS
+7       SQLCHAR             0       500     "\t"       7     Principle_Country                                      SQL_Latin1_General_CP1_CI_AS
+8       SQLCHAR             0       24      "\r\n"     8     Inserted_Datetime                                      ""
