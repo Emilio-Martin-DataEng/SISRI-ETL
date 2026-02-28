@@ -1,145 +1,144 @@
 # src/etl_orchestrator.py
 
-from datetime import datetime
+import argparse
 import logging
+from datetime import datetime
 
+from src.config import get_config
 from src.staging.etl_config import process_etl_config
-from src.staging.source_import import process_source, CONFIG_SOURCES
-from src.utils.db_ops import get_connection, get_next_audit_import_id, log_audit_source_import
+from src.staging.source_import import process_source
+from src.utils.db_ops import get_connection, get_next_audit_import_id, log_audit_source_import, execute_proc
+from src.dw.ddl_generator import generate_ddl_for_changed_sources
 
-
-# Logging setup
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filename='logs/etl_orchestrator.log',
-    filemode='a'
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    filename="logs/etl_orchestrator.log",
+    filemode="a",
 )
 console = logging.StreamHandler()
 console.setLevel(logging.INFO)
-logging.getLogger('').addHandler(console)
+logging.getLogger("").addHandler(console)
 
 
-def run_full_etl(specific_sources: list[str] | None = None):
+def run_config():
+    """Load ETL config, merge to dims; generate DDL if mapping changed."""
+    process_etl_config()
+    changed = generate_ddl_for_changed_sources()
+    if changed:
+        logging.info(f"DDL generated for changed sources: {changed}")
+    return changed
+
+
+def run_staging(specific_sources: list[str] | None = None) -> tuple[list[str], list[str], int]:
+    """Process all data sources (staging). Returns (processed, failed, total_rows)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT Source_Name, Source_Import_SK
+        FROM ETL.Dim_Source_Imports
+        WHERE Is_Active = 1 AND Is_Deleted = 0
+          AND Source_Name NOT IN ('Source_Imports', 'Source_File_Mapping')
+        ORDER BY Processing_Order ASC
+    """)
+    sources = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    processed = []
+    failed = []
+    total_rows = 0
+
+    for source_name, source_sk in sources:
+        if specific_sources and source_name not in specific_sources:
+            continue
+        logging.info(f"Processing source: {source_name}")
+        for attempt in range(3):
+            try:
+                rows = process_source(source_name)
+                processed.append(source_name)
+                total_rows += rows or 0
+                break
+            except Exception as e:
+                logging.error(f"Retry {attempt + 1}/3 for {source_name}: {e}")
+                if attempt >= 2:
+                    failed.append(source_name)
+    return processed, failed, total_rows
+
+
+def run_dimension_merges() -> list[str]:
+    """Execute SP_Merge_Dim_* for each DW dimension. Returns list of merged sources."""
+    dw_dims = get_config("dw_dimensions") or {}
+    merged = []
+    for source_name, dw_table in dw_dims.items():
+        try:
+            schema, tbl = dw_table.split(".")
+            proc_name = f"{schema}.SP_Merge_{tbl}"
+            execute_proc(proc_name)
+            merged.append(source_name)
+        except Exception as e:
+            logging.error(f"Dimension merge failed for {source_name}: {e}")
+            raise
+    return merged
+
+
+def run_full_etl(specific_sources: list[str] | None = None, from_step: str = "config"):
     """
-    Orchestrates the full ETL pipeline:
-    1. Refreshes metadata config
-    2. Creates one global audit entry for the entire run
-    3. Processes each active data source in order (skips config sources)
-    4. Aggregates metrics and updates global audit
-    5. Supports specific-sources override
+    Orchestrates ETL. Supports --from config|staging|dims|facts.
+    Each step includes its dependencies.
     """
     global_start = datetime.now()
-    logging.info(f"Full ETL run started at {global_start}")
-
     global_audit_id = None
     total_rows = 0
-    processed_sources = []
-    failed_sources = []
 
     try:
-        # Step 1: Refresh metadata config
-        logging.info("Refreshing ETL configuration...")
-        process_etl_config()
+        # Config (always first when needed)
+        if from_step in ("config", "staging", "dims", "facts"):
+            logging.info("Step: Config load")
+            run_config()
 
-        # Step 2: Create global audit entry for the entire batch run
-        global_audit_id = get_next_audit_import_id()
-        log_audit_source_import(
-            audit_id=global_audit_id,
-            source_import_sk=0,  # or SK of a dummy 'Batch Run' source if desired
-            start_time=global_start,
-            total_row_count=0,
-            total_file_count=0,
-            process_status='Running',
-            pattern='Batch Run'
-        )
-        logging.info(f"Global audit entry created: Audit_Source_Import_SK = {global_audit_id}")
+        if from_step in ("staging", "dims", "facts"):
+            global_audit_id = get_next_audit_import_id()
+            log_audit_source_import(
+                audit_id=global_audit_id,
+                source_import_sk=0,
+                start_time=global_start,
+                total_row_count=0,
+                total_file_count=0,
+                process_status="Running",
+                pattern="Batch Run",
+            )
 
-        # Step 3: Fetch active data sources (exclude config/metadata ones)
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT Source_Name, Source_Import_SK
-            FROM ETL.Dim_Source_Imports
-            WHERE Is_Active = 1 
-              AND Is_Deleted = 0 
-              AND Source_Name NOT IN ('Source_Imports', 'Source_File_Mapping')
-            ORDER BY Processing_Order ASC
-        """)
-        sources = cursor.fetchall()  # list of (name, sk)
-        cursor.close()
-        conn.close()
+            logging.info("Step: Staging")
+            processed, failed, total_rows = run_staging(specific_sources)
+            logging.info(f"Staging done: {processed}, failed: {failed}")
 
-        if not sources:
-            logging.warning("No active data sources found.")
+        if from_step in ("dims", "facts"):
+            logging.info("Step: Dimension merges")
+            merged = run_dimension_merges()
+            logging.info(f"Merged dimensions: {merged}")
+
+        if from_step == "facts":
+            logging.info("Step: Fact inserts (not yet implemented)")
+            pass
+
+        if global_audit_id:
             log_audit_source_import(
                 audit_id=global_audit_id,
                 source_import_sk=0,
                 start_time=global_start,
                 end_time=datetime.now(),
-                total_row_count=0,
+                total_row_count=total_rows,
                 total_file_count=0,
-                exception_detail="No active data sources",
-                process_status='Skipped'
+                exception_detail=None,
+                pattern="Batch Run",
+                process_status="Success",
             )
-            return
 
-        logging.info(f"Processing {len(sources)} active data sources.")
-
-        # Step 4: Process each source
-        for source_name, source_sk in sources:
-            if specific_sources and source_name not in specific_sources:
-                continue
-
-            logging.info(f"\n=== Processing source: {source_name} (SK={source_sk}) ===")
-            source_start = datetime.now()
-
-            retries = 0
-            success = False
-            source_rows = 0
-            while retries < 3 and not success:
-                try:
-                    # Call process_source → assume we modify it to return row count
-                    source_rows = process_source(source_name)  # ← needs return value!
-                    success = True
-                    processed_sources.append(source_name)
-                    total_rows += source_rows
-                except Exception as e:
-                    retries += 1
-                    logging.error(f"Retry {retries}/3 for {source_name}: {e}")
-                    if retries >= 3:
-                        failed_sources.append(source_name)
-                        logging.error(f"Failed {source_name} after 3 retries: {e}")
-
-            source_duration = (datetime.now() - source_start).total_seconds()
-            logging.info(f"{source_name} completed in {source_duration:.2f}s (rows: {source_rows})")
-
-        # Step 5: Finalize global audit
-        global_end = datetime.now()
-        status = 'Success' if not failed_sources else 'Partial Success'
-        exception_detail = f"Failed sources: {failed_sources}" if failed_sources else None
-
-        log_audit_source_import(
-            audit_id=global_audit_id,
-            source_import_sk=0,
-            start_time=global_start,
-            end_time=global_end,
-            total_row_count=total_rows,
-            total_file_count=0,  # or count files across all sources if aggregated
-            exception_detail=exception_detail,
-            pattern='Batch Run',
-            process_status=status
-        )
-
-        logging.info(f"Full ETL completed at {global_end}")
-        logging.info(f"Duration: {(global_end - global_start).total_seconds():.2f}s")
-        logging.info(f"Total rows loaded: {total_rows}")
-        logging.info(f"Processed: {processed_sources}")
-        if failed_sources:
-            logging.warning(f"Failed sources: {failed_sources}")
+        logging.info(f"ETL completed in {(datetime.now() - global_start).total_seconds():.2f}s")
 
     except Exception as e:
-        logging.error(f"Critical orchestrator failure: {e}")
+        logging.error(f"ETL failed: {e}")
         if global_audit_id:
             log_audit_source_import(
                 audit_id=global_audit_id,
@@ -149,12 +148,40 @@ def run_full_etl(specific_sources: list[str] | None = None):
                 total_row_count=total_rows,
                 total_file_count=0,
                 exception_detail=str(e),
-                process_status='Failed'
+                process_status="Failed",
             )
         raise
 
 
 if __name__ == "__main__":
-    run_full_etl()                     # all active data sources
-    # run_full_etl(['Principals'])     # test single source
-    # run_full_etl(['Brands', 'Principals'])
+    parser = argparse.ArgumentParser(description="SISRI ETL Orchestrator")
+    parser.add_argument(
+        "--from",
+        dest="from_step",
+        choices=["config", "staging", "dims", "facts"],
+        default="staging",
+        help="Start from this step (includes dependencies)",
+    )
+    parser.add_argument("--sources", nargs="*", help="Process only these sources (staging)")
+    parser.add_argument(
+        "--apply-ddl",
+        action="store_true",
+        help="Execute .sql scripts from config/DW_DDL/run/ and archive on success",
+    )
+    args = parser.parse_args()
+
+    if args.apply_ddl:
+        from src.dw.script_executor import execute_run_folder_scripts
+
+        ok, errs = execute_run_folder_scripts()
+        if ok:
+            logging.info(f"Executed and archived: {ok}")
+        if errs:
+            for f, e in errs:
+                logging.error(f"{f}: {e}")
+            raise SystemExit(1)
+    else:
+        run_full_etl(
+            specific_sources=args.sources if args.sources else None,
+            from_step=args.from_step,
+        )

@@ -79,7 +79,7 @@ def process_etl_config():
             return  # Exit cleanly - no crash
 
         config_file = config_files[0]
-        print(f"Loading config from: {config_file}")
+        print(f"Loading ETL config from: {config_file}")
 
         # Read sheets (force string to avoid type issues)
         df_imports = pd.read_excel(config_file, sheet_name="Source_Imports", dtype=str)
@@ -89,9 +89,25 @@ def process_etl_config():
         df_imports = df_imports.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
         df_mapping = df_mapping.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
 
+        # Ensure Is_Type2_Attribute and Is_PK exist; normalize TRUE/FALSE to 1/0 for BCP bit
+        for col in ("Is_Type2_Attribute", "Is_PK"):
+            if col not in df_mapping.columns:
+                df_mapping[col] = "0"
+            else:
+                df_mapping[col] = df_mapping[col].apply(
+                    lambda v: "1" if str(v).upper() in ("TRUE", "1", "YES") else "0"
+                )
+
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.000")
         df_imports["Inserted_Datetime"] = now_str
         df_mapping["Inserted_Datetime"] = now_str
+
+        # Column order for Source_File_Mapping (must match .fmt file)
+        mapping_cols = [
+            "Source_Name", "Source_Column", "Target_Column", "Data_Type", "Description",
+            "Is_Type2_Attribute", "Is_PK", "Inserted_Datetime",
+        ]
+        df_mapping = df_mapping[[c for c in mapping_cols if c in df_mapping.columns]]
 
         # Prepare text files for BCP
         temp_dir = Path("temp")
@@ -164,17 +180,12 @@ def process_etl_config():
 
         format_dir.mkdir(exist_ok=True)
 
-        print("Using format files:")
-        print(f"  - Source_Imports: {format_imports}")
-        print(f"  - Source_File_Mapping: {format_mapping}")
-
         # Truncate staging tables via stored procedure (preferred over direct TRUNCATE)
         # Note: if you later move truncate to proc, replace these calls
         truncate_table("ETL.Source_Imports")
         truncate_table("ETL.Source_File_Mapping")
 
         # BCP load
-        print("Loading Source_Imports table...")
         upload_via_bcp(
             file_path=imports_path,
             table="ETL.Source_Imports",
@@ -183,7 +194,6 @@ def process_etl_config():
             first_row=1,
         )
 
-        print("Loading Source_File_Mapping table...")
         upload_via_bcp(
             file_path=mapping_path,
             table="ETL.Source_File_Mapping",
@@ -193,15 +203,12 @@ def process_etl_config():
         )
 
         # Merge via stored procedures
-        print("Merging staging to dimension tables...")
         execute_proc("ETL.SP_Merge_Dim_Source_Imports")
         execute_proc("ETL.SP_Merge_Dim_Source_Imports_Mapping")
 
         # Fetch real SKs for config sources
         imports_sk = get_source_import_sk("Source_Imports")
         mapping_sk = get_source_import_sk("Source_File_Mapping")
-        print(f"[DEBUG] Real Source_Import_SK for Source_Imports: {imports_sk}")
-        print(f"[DEBUG] Real Source_Import_SK for Source_File_Mapping: {mapping_sk}")
 
         # === ARCHIVING + LINEAGE ===
         # One physical archive copy of the Excel file, referenced by two audit rows.
@@ -261,7 +268,6 @@ def process_etl_config():
             pattern=config_filename,
             process_status="Success",
         )
-        print("ETL configuration loaded, merged, audited, and archived successfully.")
 
     except Exception as e:
         end_time = datetime.now()

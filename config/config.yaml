@@ -27,6 +27,19 @@ logs:
   bcp_errors_prefix: "bcp_errors"
   archive_staging: true
 
+# DW DDL: generated scripts (inspection), run (engineer copies here), archive (after success)
+dw_ddl:
+  base_folder: "config/DW_DDL"
+  generated_folder: "generated"
+  run_folder: "run"
+  archive_folder: "archive"
+  state_folder: "state"
+
+# DW dimension sources (Source_Name -> DW table). Excludes ETL metadata: Source_Imports, Source_File_Mapping
+dw_dimensions:
+  Principals: "DW.Dim_Principals"
+  Brands: "DW.Dim_Brands"
+
 # Optional: settings for the config loader itself
 etl_config_loader:
   sheet_imports: "Source_Imports"

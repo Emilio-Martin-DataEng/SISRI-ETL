@@ -56,8 +56,6 @@ def upload_via_bcp(
         pwd_index = masked_cmd.index("-P") + 1
         masked_cmd[pwd_index] = "***"
 
-    print("DEBUG: Full BCP command (password masked):")
-    print(" ".join(masked_cmd))
 
     try:
         result = subprocess.run(

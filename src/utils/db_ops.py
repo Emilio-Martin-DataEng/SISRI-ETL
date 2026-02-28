@@ -32,7 +32,6 @@ def truncate_table(table_name: str):
     try:
         cursor.execute(f"TRUNCATE TABLE {table_name}")
         conn.commit()
-        print(f"Truncated table: {table_name}")
     except Exception as e:
         conn.rollback()
         print(f"Truncate failed for {table_name}: {e}")
@@ -101,7 +100,6 @@ def get_next_audit_import_id() -> int:
         audit_id = int(row[0])
         
         conn.commit()
-        print(f"[AUDIT] Created real audit entry with ID: {audit_id}")
         return audit_id
     
     except Exception as e:
@@ -157,7 +155,6 @@ def log_audit_source_import(
     cursor.close()
     conn.close()
     
-    print(f"Audit updated for Audit_Source_Import_SK = {audit_id}")
 
 def insert_source_file_archive(
     audit_id: int,
@@ -279,5 +276,4 @@ def generate_bcp_format_file(source_name: str, fmt_path: str):
     with open(fmt_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
-    print(f"Generated BCP format file for source '{source_name}': {fmt_path}")
 
