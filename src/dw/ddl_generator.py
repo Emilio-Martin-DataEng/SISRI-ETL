@@ -11,12 +11,12 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from src.config import BASE_PATH, get_config
+from src.config import CONFIG_ROOT, get_config
 from src.utils.db_ops import get_connection
 
 
 def _get_ddl_paths():
-    base = BASE_PATH() / get_config("dw_ddl", "base_folder", default="config/DW_DDL")
+    base = CONFIG_ROOT / get_config("dw_ddl", "base_folder", default="DW_DDL")
     return {
         "generated": base / get_config("dw_ddl", "generated_folder", default="generated"),
         "run": base / get_config("dw_ddl", "run_folder", default="run"),
@@ -159,6 +159,12 @@ def _generate_table_ddl(source_name: str, dw_table: str, mapping_rows: list) -> 
     for r in attr_cols:
         lines.append(f"    IF NOT EXISTS (SELECT 1 FROM sys.columns c JOIN sys.tables t ON t.object_id = c.object_id JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = '{schema}' AND t.name = '{table}' AND c.name = '{r.Target_Column}')")
         lines.append(f"        ALTER TABLE [{schema}].[{table}] ADD [{r.Target_Column}] {r.Data_Type} NULL;")
+    if has_type2:
+        for syscol, deftxt in [("Row_Is_Current", "BIT NOT NULL CONSTRAINT [DF_" + table + "_Row_Is_Current] DEFAULT (1)"),
+                               ("Row_Effective_Datetime", "DATETIME NOT NULL CONSTRAINT [DF_" + table + "_Row_Eff] DEFAULT (GETDATE())"),
+                               ("Row_Expiry_Datetime", "DATETIME NULL")]:
+            lines.append(f"    IF NOT EXISTS (SELECT 1 FROM sys.columns c JOIN sys.tables t ON t.object_id = c.object_id JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = '{schema}' AND t.name = '{table}' AND c.name = '{syscol}')")
+            lines.append(f"        ALTER TABLE [{schema}].[{table}] ADD [{syscol}] {deftxt};")
     lines.append("END")
     lines.append("GO")
     lines.append("")
@@ -256,6 +262,21 @@ def _generate_merge_proc(source_name: str, dw_table: str, ods_table: str, mappin
     if has_type2:
         subq += " AND d.Row_Is_Current = 1"
     lines.append("        " + subq + ");")
+    lines.append("")
+    has_soft_delete = schema == "ETL" and table == "Dim_Source_Imports"
+    if has_soft_delete:
+        match_row = " AND d.Row_Is_Current = 1" if has_type2 else ""
+        lines.append("        -- SOFT-DELETE: mark rows no longer in staging")
+        lines.append(f"        UPDATE d SET d.Is_Deleted = 1, d.Updated_Datetime = GETDATE()" + (" , d.Row_Is_Current = 0, d.Row_Expiry_Datetime = GETDATE()" if has_type2 else ""))
+        lines.append(f"        FROM [{schema}].[{table}] d")
+        lines.append(f"        LEFT JOIN [{ods_schema}].[{ods_tbl}] o ON {not_exists_clause}")
+        lines.append(f"        WHERE o." + (pk_cols[0] if pk_cols else "1") + " IS NULL AND d.Is_Deleted = 0" + match_row + ";")
+        lines.append("")
+        lines.append("        -- RE-ACTIVATE: rows that reappear in staging")
+        lines.append("        UPDATE d SET d.Is_Deleted = 0, d.Updated_Datetime = GETDATE()")
+        lines.append(f"        FROM [{schema}].[{table}] d")
+        lines.append(f"        INNER JOIN [{ods_schema}].[{ods_tbl}] o ON {not_exists_clause}")
+        lines.append("        WHERE d.Is_Deleted = 1;")
     lines.append("    END TRY")
     lines.append("    BEGIN CATCH")
     lines.append("        DECLARE @ErrMsg NVARCHAR(MAX) = ERROR_MESSAGE(), @ErrNum INT = ERROR_NUMBER(),")
@@ -272,11 +293,13 @@ def _generate_merge_proc(source_name: str, dw_table: str, ods_table: str, mappin
 
 def generate_ddl_for_changed_sources():
     """
-    For each DW dimension source, detect mapping changes (Inserted_Datetime/Updated_Datetime).
+    For each dimension source (DW + metadata), detect mapping changes.
     If changed, generate DDL and merge proc to generated/ folder.
     Returns list of source names that had changes.
     """
     dw_dims = get_config("dw_dimensions") or {}
+    meta_dims = get_config("metadata_dimensions") or {}
+    all_dims = dict(dw_dims, **meta_dims)
     paths = _get_ddl_paths()
     paths["generated"].mkdir(parents=True, exist_ok=True)
 
@@ -285,7 +308,7 @@ def generate_ddl_for_changed_sources():
     changed_sources = []
 
     try:
-        for source_name, dw_table in dw_dims.items():
+        for source_name, dw_table in all_dims.items():
             max_dt = _get_mapping_max_datetime(conn, source_name)
             if not max_dt:
                 continue

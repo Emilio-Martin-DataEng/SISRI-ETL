@@ -73,7 +73,8 @@ BEGIN
                 d.Data_Type           <> s.Data_Type           OR (d.Data_Type IS NULL AND s.Data_Type IS NOT NULL) OR (d.Data_Type IS NOT NULL AND s.Data_Type IS NULL) OR
                 d.Description         <> s.Description         OR (d.Description IS NULL AND s.Description IS NOT NULL) OR (d.Description IS NOT NULL AND s.Description IS NULL) OR
                 COALESCE(d.Is_Type2_Attribute, 0) <> COALESCE(s.Is_Type2_Attribute, 0) OR
-                COALESCE(d.Is_PK, 0)            <> COALESCE(s.Is_PK, 0)
+                COALESCE(d.Is_PK, 0)            <> COALESCE(s.Is_PK, 0) OR
+                d.Is_Type2_Attribute  IS NULL OR d.Is_PK IS NULL   /* backfill existing rows */
             );
 
         -- Step 2: INSERT new records
@@ -104,6 +105,13 @@ BEGIN
         FROM ETL.Dim_Source_Imports_Mapping d
         INNER JOIN ETL.Source_File_Mapping s ON d.Source_Name = s.Source_Name AND d.Source_Column = s.Source_Column
         WHERE d.Is_Deleted = 1;
+
+        -- One-time backfill: set flags on rows that still have NULL (e.g. pre-migration)
+        UPDATE ETL.Dim_Source_Imports_Mapping
+        SET Is_Type2_Attribute = COALESCE(Is_Type2_Attribute, 0),
+            Is_PK = COALESCE(Is_PK, 0),
+            Updated_Datetime = @Datetime
+        WHERE Is_Type2_Attribute IS NULL OR Is_PK IS NULL;
     END TRY
     BEGIN CATCH
         DECLARE @ErrorMessage NVARCHAR(MAX) = ERROR_MESSAGE(),

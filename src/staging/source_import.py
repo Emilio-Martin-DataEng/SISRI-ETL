@@ -7,7 +7,7 @@ import pyodbc
 import csv
 import shutil
 
-from src.config import BASE_PATH, get_db_config, get_config
+from src.config import BASE_PATH, CONFIG_ROOT, get_db_config, get_config
 from src.utils.db import upload_via_bcp
 from src.utils.db_ops import (
     get_next_audit_import_id,
@@ -145,8 +145,7 @@ def process_source(source_name: str):
             na_rep=''
         )
 
-        config_folder = BASE_PATH() / get_config("base", "config_folder")
-        format_dir = config_folder / "format"
+        format_dir = CONFIG_ROOT / "format"
         format_dir.mkdir(parents=True, exist_ok=True)
         format_path = format_dir / f"{source_name.lower()}.fmt"
 

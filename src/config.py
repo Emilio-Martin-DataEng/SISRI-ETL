@@ -75,4 +75,7 @@ get_logs_dir = Config.get_logs_dir
 # Convenience shortcuts
 get_config = Config.get
 get_db_config = Config.db_config
+# Data root: raw files, archive, staging (configurable, e.g. C:\SISRI)
 BASE_PATH = lambda: Path(get_config("base", "file_root"))
+# Config root: config files, format files, DDL (always under project root)
+CONFIG_ROOT = PROJECT_ROOT / "config"

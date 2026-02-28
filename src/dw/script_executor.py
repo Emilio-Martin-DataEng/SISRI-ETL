@@ -8,12 +8,12 @@ import re
 from pathlib import Path
 from datetime import datetime
 
-from src.config import BASE_PATH, get_config
+from src.config import CONFIG_ROOT, get_config
 from src.utils.db_ops import get_connection
 
 
 def _get_ddl_paths():
-    base = BASE_PATH() / get_config("dw_ddl", "base_folder", default="config/DW_DDL")
+    base = CONFIG_ROOT / get_config("dw_ddl", "base_folder", default="DW_DDL")
     return {
         "run": base / get_config("dw_ddl", "run_folder", default="run"),
         "archive": base / get_config("dw_ddl", "archive_folder", default="archive"),

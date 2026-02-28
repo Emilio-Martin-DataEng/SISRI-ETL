@@ -16,7 +16,7 @@ import csv
 import shutil
 from datetime import datetime
 
-from src.config import BASE_PATH, get_db_config, get_config
+from src.config import BASE_PATH, CONFIG_ROOT, get_db_config, get_config
 from src.utils.db import upload_via_bcp
 from src.utils.db_ops import (
     truncate_table,
@@ -53,7 +53,7 @@ def process_etl_config():
 
     try:
         # === Locate config file ===
-        config_folder = BASE_PATH() / get_config("base", "config_folder")
+        config_folder = CONFIG_ROOT
         config_filename = get_config("base", "config_filename")
 
         config_files = list(config_folder.glob(config_filename))
@@ -174,8 +174,7 @@ def process_etl_config():
             process_status="Running",
         )
 
-        # Format file paths
-        format_dir = config_folder / "format"
+        format_dir = CONFIG_ROOT / "format"
         format_imports = format_dir / "source_imports.fmt"
         format_mapping = format_dir / "source_file_mapping.fmt"
 

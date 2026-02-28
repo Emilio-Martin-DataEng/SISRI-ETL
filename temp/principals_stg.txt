@@ -1,40 +1,40 @@
-P001	REITZER	REITZER	3 Energy Road	Kempton Park	Gauteng	South Africa	2026-02-28 13:19:55.000
-P002	REVLON	REVLON	28-30 Tungsten Street	Kempton Park	Gauteng	South Africa	2026-02-28 13:19:55.000
-P003	NATIVA	NATIVA	260 Cradock Ave	Centurion	Gauteng	South Africa	2026-02-28 13:19:55.000
-P004	SMD TECHNOLOGIES	SMD TECHNOLOGIES	2 Lascelles Road	Edenvale	Gauteng	South Africa	2026-02-28 13:19:55.000
-P005	COSMEDERM	VAN DYK	608 Falcon Lane Lanseria Corp. Estate	Lanseria	Gauteng	South Africa	2026-02-28 13:19:55.000
-P006	IVODENT	IVODENT	Fairland House, 364 Victoria Road	Cape Town	Western Cape	South Africa	2026-02-28 13:19:55.000
-P007	GALDERMA	GALDERMA	Block C FutureSpace, Nicol Main Office Park, 2 Bruton Rd	Sandton	Gauteng	South Africa	2026-02-28 13:19:55.000
-P008	NATROCEUTICS	NATROCEUTICS	30 Hudson Street	Cape Town	Western Cape	South Africa	2026-02-28 13:19:55.000
-P009	ORPHAN	ORPHAN	260 Cape Road	Port Elizabeth	Eastern Cape	South Africa	2026-02-28 13:19:55.000
-P010	AVID BRANDS	AVID BRANDS	58 Director Road	Kempton Park	Gauteng	South Africa	2026-02-28 13:19:55.000
-P011	BIOMED	BIOMED	Unit 6 & 7 Mifa Industrial Park, 399 George Street	Midrand	Gauteng	South Africa	2026-02-28 13:19:55.000
-P012	CARMIEN TEA	CARMIEN TEA	Bergendal Boerdery, Paleisheuwel Road From the, N7	Citrusdal	Western Cape	South Africa	2026-02-28 13:19:55.000
-P013	CERDAK	CERDAK	22a Siyayi Drive	Mtunzini	KwaZulu Natal	South Africa	2026-02-28 13:19:55.000
-P014	CRESCRO	BABY WOMB WORLD	Fountain Square, 78 Kalkoen Street	Pretoria	Gauteng	South Africa	2026-02-28 13:19:55.000
-P015	DOPPELHERZ	DOPPELHERZ	Fairland House, 364 Victoria Road	Cape Town	Western Cape	South Africa	2026-02-28 13:19:55.000
-P016	DRU LEF RETAIL	NATURMADE	162 Bagley Terrace	Northcliff	Gauteng	South Africa	2026-02-28 13:19:55.000
-P017	FMCG1	FMCG1	Unit 11 – Milano Business Park, 4 Plein Street	Cape Town	Western Cape	South Africa	2026-02-28 13:19:55.000
-P018	GOOD STUFF	GOOD STUFF	Zunitra Close, 3 Kerryvale Avenue	Mount Edgecombe	KwaZulu Natal	South Africa	2026-02-28 13:19:55.000
-P019	HAPPY EARTH PEOPLE	HAPPY EARTH PEOPLE	5 Liyema Park, 3 Ferrule Avenue	Cape Town	Western Cape	South Africa	2026-02-28 13:19:55.000
-P020	HITECH THERAPY	HITECH	Northlands Deco Park, New Market Road	Northriding	Gauteng	South Africa	2026-02-28 13:19:55.000
-P021	ISM TRADING	ISM	Unit 7 Robertville Industrial Park, 254 Nadine Street	Roodepoort	Gauteng	South Africa	2026-02-28 13:19:55.000
-P022	KD FOODS	KD FOODS	23 Nguni Drive	Edenvale	Gauteng	South Africa	2026-02-28 13:19:55.000
-P023	LEVTRADE	LEVTRADE	29 Scott Street	Johannesburg	Gauteng	South Africa	2026-02-28 13:19:55.000
-P024	MOTOQUIP	MOTOQUIP	30 North Reef Road	Germiston	Gauteng	South Africa	2026-02-28 13:19:55.000
-P025	NANOBEBE	NANOBEBE	5-7 Ayrshire Ave	Kempton Park	Gauteng	South Africa	2026-02-28 13:19:55.000
-P026	NATURAL SALES	NATURAL SALES	9 Acacia Road	Sandton	Gauteng	South Africa	2026-02-28 13:19:55.000
-P027	OH LIEF	OH LIEF	5 Loop Street	Cape Town	Western Cape	South Africa	2026-02-28 13:19:55.000
-P028	PHARMA DYNAMICS	PHARMA DYNAMICS	Grapevine House, Steenberg Office Park Silverwood Close Westlake	Cape Town	Western Cape	South Africa	2026-02-28 13:19:55.000
-P029	PURE ENDURANCE SOLUTIONS	PURE ENDURANCE	Unit 9, The Gables, Prime Park, Printers way	Montagu Gardens	Western Cape	South Africa	2026-02-28 13:19:55.000
-P030	TACOMA FOODS	TACOMA FOODS	17 Manchester Street	Cape Town	Western Cape	South Africa	2026-02-28 13:19:55.000
-P031	THE HARVEST TABLE	THE HARVEST TABLE	Unit 1, 8 Reed Place	Pinetown	KwaZulu Natal	South Africa	2026-02-28 13:19:55.000
-P032	VALOTORQUE 222	GULLON	14 Wellington Avenue	Wynberg	Gauteng	South Africa	2026-02-28 13:19:55.000
-P033	VELD BOTANICALS	SOIL	Winderemere Farm	Gingindlovu	KwaZulu Natal	South Africa	2026-02-28 13:19:55.000
-P034	WEDGEWOOD	WEDGEWOOD	12A Birnamwood Road	Howick	KwaZulu Natal	South Africa	2026-02-28 13:19:55.000
-P035	WEIDER	GFI	Unit 16 Woodlands, 116 Cockspur Road	Weltevreden Park	Gauteng	South Africa	2026-02-28 13:19:55.000
-P036	WILLOW CREEK	WILLOW CREEK	Nuy Road, Nuy Valley	Worcester	Western Cape	South Africa	2026-02-28 13:19:55.000
-P037	ZELPY	RUSSEL RICH	Pniel Road	Groot Drakenstein	Western Cape	South Africa	2026-02-28 13:19:55.000
-P038	ALCHEMY	MONDAY	18 Plantation Road	Cape Town	Western Cape	South Africa	2026-02-28 13:19:55.000
-P039	AVALANCHE	AVALANCHE	Longmeadow Business Estate, 23 Nguni Drive	Johannesburg	Gauteng	South Africa	2026-02-28 13:19:55.000
-P040	BBH AGENCY	BBH AGENCY	UNIT B11, Century Square, Heron Crescent	Cape Town	Western Cape	South Africa	2026-02-28 13:19:55.000
+P001	REITZER	REITZER	3 Energy Road	Kempton Park	Gauteng	South Africa	2026-03-01 01:00:41.000
+P002	REVLON	REVLON	28-30 Tungsten Street	Kempton Park	Gauteng	South Africa	2026-03-01 01:00:41.000
+P003	NATIVA	NATIVA	260 Cradock Ave	Centurion	Gauteng	South Africa	2026-03-01 01:00:41.000
+P004	SMD TECHNOLOGIES	SMD TECHNOLOGIES	2 Lascelles Road	Edenvale	Gauteng	South Africa	2026-03-01 01:00:41.000
+P005	COSMEDERM	VAN DYK	608 Falcon Lane Lanseria Corp. Estate	Lanseria	Gauteng	South Africa	2026-03-01 01:00:41.000
+P006	IVODENT	IVODENT	Fairland House, 364 Victoria Road	Cape Town	Western Cape	South Africa	2026-03-01 01:00:41.000
+P007	GALDERMA	GALDERMA	Block C FutureSpace, Nicol Main Office Park, 2 Bruton Rd	Sandton	Gauteng	South Africa	2026-03-01 01:00:41.000
+P008	NATROCEUTICS	NATROCEUTICS	30 Hudson Street	Cape Town	Western Cape	South Africa	2026-03-01 01:00:41.000
+P009	ORPHAN	ORPHAN	260 Cape Road	Port Elizabeth	Eastern Cape	South Africa	2026-03-01 01:00:41.000
+P010	AVID BRANDS	AVID BRANDS	58 Director Road	Kempton Park	Gauteng	South Africa	2026-03-01 01:00:41.000
+P011	BIOMED	BIOMED	Unit 6 & 7 Mifa Industrial Park, 399 George Street	Midrand	Gauteng	South Africa	2026-03-01 01:00:41.000
+P012	CARMIEN TEA	CARMIEN TEA	Bergendal Boerdery, Paleisheuwel Road From the, N7	Citrusdal	Western Cape	South Africa	2026-03-01 01:00:41.000
+P013	CERDAK	CERDAK	22a Siyayi Drive	Mtunzini	KwaZulu Natal	South Africa	2026-03-01 01:00:41.000
+P014	CRESCRO	BABY WOMB WORLD	Fountain Square, 78 Kalkoen Street	Pretoria	Gauteng	South Africa	2026-03-01 01:00:41.000
+P015	DOPPELHERZ	DOPPELHERZ	Fairland House, 364 Victoria Road	Cape Town	Western Cape	South Africa	2026-03-01 01:00:41.000
+P016	DRU LEF RETAIL	NATURMADE	162 Bagley Terrace	Northcliff	Gauteng	South Africa	2026-03-01 01:00:41.000
+P017	FMCG1	FMCG1	Unit 11 – Milano Business Park, 4 Plein Street	Cape Town	Western Cape	South Africa	2026-03-01 01:00:41.000
+P018	GOOD STUFF	GOOD STUFF	Zunitra Close, 3 Kerryvale Avenue	Mount Edgecombe	KwaZulu Natal	South Africa	2026-03-01 01:00:41.000
+P019	HAPPY EARTH PEOPLE	HAPPY EARTH PEOPLE	5 Liyema Park, 3 Ferrule Avenue	Cape Town	Western Cape	South Africa	2026-03-01 01:00:41.000
+P020	HITECH THERAPY	HITECH	Northlands Deco Park, New Market Road	Northriding	Gauteng	South Africa	2026-03-01 01:00:41.000
+P021	ISM TRADING	ISM	Unit 7 Robertville Industrial Park, 254 Nadine Street	Roodepoort	Gauteng	South Africa	2026-03-01 01:00:41.000
+P022	KD FOODS	KD FOODS	23 Nguni Drive	Edenvale	Gauteng	South Africa	2026-03-01 01:00:41.000
+P023	LEVTRADE	LEVTRADE	29 Scott Street	Johannesburg	Gauteng	South Africa	2026-03-01 01:00:41.000
+P024	MOTOQUIP	MOTOQUIP	30 North Reef Road	Germiston	Gauteng	South Africa	2026-03-01 01:00:41.000
+P025	NANOBEBE	NANOBEBE	5-7 Ayrshire Ave	Kempton Park	Gauteng	South Africa	2026-03-01 01:00:41.000
+P026	NATURAL SALES	NATURAL SALES	9 Acacia Road	Sandton	Gauteng	South Africa	2026-03-01 01:00:41.000
+P027	OH LIEF	OH LIEF	5 Loop Street	Cape Town	Western Cape	South Africa	2026-03-01 01:00:41.000
+P028	PHARMA DYNAMICS	PHARMA DYNAMICS	Grapevine House, Steenberg Office Park Silverwood Close Westlake	Cape Town	Western Cape	South Africa	2026-03-01 01:00:41.000
+P029	PURE ENDURANCE SOLUTIONS	PURE ENDURANCE	Unit 9, The Gables, Prime Park, Printers way	Montagu Gardens	Western Cape	South Africa	2026-03-01 01:00:41.000
+P030	TACOMA FOODS	TACOMA FOODS	17 Manchester Street	Cape Town	Western Cape	South Africa	2026-03-01 01:00:41.000
+P031	THE HARVEST TABLE	THE HARVEST TABLE	Unit 1, 8 Reed Place	Pinetown	KwaZulu Natal	South Africa	2026-03-01 01:00:41.000
+P032	VALOTORQUE 222	GULLON	14 Wellington Avenue	Wynberg	Gauteng	South Africa	2026-03-01 01:00:41.000
+P033	VELD BOTANICALS	SOIL	Winderemere Farm	Gingindlovu	KwaZulu Natal	South Africa	2026-03-01 01:00:41.000
+P034	WEDGEWOOD	WEDGEWOOD	12A Birnamwood Road	Howick	KwaZulu Natal	South Africa	2026-03-01 01:00:41.000
+P035	WEIDER	GFI	Unit 16 Woodlands, 116 Cockspur Road	Weltevreden Park	Gauteng	South Africa	2026-03-01 01:00:41.000
+P036	WILLOW CREEK	WILLOW CREEK	Nuy Road, Nuy Valley	Worcester	Western Cape	South Africa	2026-03-01 01:00:41.000
+P037	ZELPY	RUSSEL RICH	Pniel Road	Groot Drakenstein	Western Cape	South Africa	2026-03-01 01:00:41.000
+P038	ALCHEMY	MONDAY	18 Plantation Road	Cape Town	Western Cape	South Africa	2026-03-01 01:00:41.000
+P039	AVALANCHE	AVALANCHE	Longmeadow Business Estate, 23 Nguni Drive	Johannesburg	Gauteng	South Africa	2026-03-01 01:00:41.000
+P040	BBH AGENCY	BBH AGENCY	UNIT B11, Century Square, Heron Crescent	Cape Town	Western Cape	South Africa	2026-03-01 01:00:41.000

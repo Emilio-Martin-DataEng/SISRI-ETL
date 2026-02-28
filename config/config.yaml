@@ -35,10 +35,15 @@ dw_ddl:
   archive_folder: "archive"
   state_folder: "state"
 
-# DW dimension sources (Source_Name -> DW table). Excludes ETL metadata: Source_Imports, Source_File_Mapping
+# DW dimension sources (Source_Name -> DW table)
 dw_dimensions:
   Principals: "DW.Dim_Principals"
   Brands: "DW.Dim_Brands"
+
+# ETL metadata dimensions (generated merge procs; Source_Imports has SCD Type 2)
+# Source_File_Mapping proc stays in migration (has Source_Import_SK lookup)
+metadata_dimensions:
+  Source_Imports: "ETL.Dim_Source_Imports"
 
 # Optional: settings for the config loader itself
 etl_config_loader:
