@@ -1,24 +1,23 @@
-Principals	Principal_Code	Principal_Code	VARCHAR(500)	Primary key	2026-02-27 15:00:24.000
-Principals	Principal_Name	Principal_Name	VARCHAR(500)	Display name	2026-02-27 15:00:24.000
-Principals	Principal_Trading_As_Name	Principal_Trading_As_Name	VARCHAR(500)	Trading name	2026-02-27 15:00:24.000
-Principals	Principal_Address 	Principal_Address 	VARCHAR(500)	Address 	2026-02-27 15:00:24.000
-Principals	Principal_City    	Principal_City    	VARCHAR(500)	City    	2026-02-27 15:00:24.000
-Principals	Principal_Province	Principal_Province	VARCHAR(500)	Province	2026-02-27 15:00:24.000
-Principals	Principal_Country 	Principal_Country 	VARCHAR(500)	Country 	2026-02-27 15:00:24.000
-Source_Imports	Source_Name	Source_Name	VARCHAR(500)	Primary key	2026-02-27 15:00:24.000
-Source_Imports	Rel_Path	Rel_Path	VARCHAR(500)	Relative path from root	2026-02-27 15:00:24.000
-Source_Imports	Pattern	Pattern	VARCHAR(500)	File name search pattern	2026-02-27 15:00:24.000
-Source_Imports	Sheet_Name	Sheet_Name	VARCHAR(500)	Spreadsheet name	2026-02-27 15:00:24.000
-Source_Imports	Staging_Table	Staging_Table	VARCHAR(500)	Two part staging table name	2026-02-27 15:00:24.000
-Source_Imports	Processing_Order	Processing_Order	VARCHAR(500)	Order the source files should be processed in	2026-02-27 15:00:24.000
-Source_Imports	Is_Active	Is_Active	VARCHAR(500)	Active Indicator	2026-02-27 15:00:24.000
-Source_Imports	Description	Description	VARCHAR(500)	Description of file contents	2026-02-27 15:00:24.000
-Source_File_Mapping	Source_Name	Source_Name	VARCHAR(500)	Source_Imports source name	2026-02-27 15:00:24.000
-Source_File_Mapping	Source_Column	Source_Column	VARCHAR(500)	Spreadsheet column name	2026-02-27 15:00:24.000
-Source_File_Mapping	Target_Column	Target_Column	VARCHAR(500)	Database table name	2026-02-27 15:00:24.000
-Source_File_Mapping	Data_Type	Data_Type	VARCHAR(500)	Database datatype	2026-02-27 15:00:24.000
-Source_File_Mapping	Description	Description	VARCHAR(500)	Column Description	2026-02-27 15:00:24.000
-Brands	Dimension	Brand_			2026-02-27 15:00:24.000
-Brands	Description				2026-02-27 15:00:24.000
-Brands	Example				2026-02-27 15:00:24.000
-Brands	Data type				2026-02-27 15:00:24.000
+Principals	Principal Code	Principal_Code	VARCHAR(500)	Primary key	2026-02-28 12:28:21.000
+Principals	Principal Name	Principal_Name	VARCHAR(500)	Display name	2026-02-28 12:28:21.000
+Principals	Trading as Name	Principal_Trading_As_Name	VARCHAR(500)	Trading name	2026-02-28 12:28:21.000
+Principals	Principal Address	Principal_Address 	VARCHAR(500)	Address 	2026-02-28 12:28:21.000
+Principals	Principal City	Principal_City    	VARCHAR(500)	City    	2026-02-28 12:28:21.000
+Principals	Principal Province	Principal_Province	VARCHAR(500)	Province	2026-02-28 12:28:21.000
+Principals	Principal Country	Principal_Country 	VARCHAR(500)	Country 	2026-02-28 12:28:21.000
+Source_Imports	Source_Name	Source_Name	VARCHAR(500)	Primary key	2026-02-28 12:28:21.000
+Source_Imports	Rel_Path	Rel_Path	VARCHAR(500)	Relative path from root	2026-02-28 12:28:21.000
+Source_Imports	Pattern	Pattern	VARCHAR(500)	File name search pattern	2026-02-28 12:28:21.000
+Source_Imports	Sheet_Name	Sheet_Name	VARCHAR(500)	Spreadsheet name	2026-02-28 12:28:21.000
+Source_Imports	Staging_Table	Staging_Table	VARCHAR(500)	Two part staging table name	2026-02-28 12:28:21.000
+Source_Imports	Processing_Order	Processing_Order	VARCHAR(500)	Order the source files should be processed in	2026-02-28 12:28:21.000
+Source_Imports	Is_Active	Is_Active	VARCHAR(500)	Active Indicator	2026-02-28 12:28:21.000
+Source_Imports	Description	Description	VARCHAR(500)	Description of file contents	2026-02-28 12:28:21.000
+Source_File_Mapping	Source_Name	Source_Name	VARCHAR(500)	Source_Imports source name	2026-02-28 12:28:21.000
+Source_File_Mapping	Source_Column	Source_Column	VARCHAR(500)	Spreadsheet column name	2026-02-28 12:28:21.000
+Source_File_Mapping	Target_Column	Target_Column	VARCHAR(500)	Database table name	2026-02-28 12:28:21.000
+Source_File_Mapping	Data_Type	Data_Type	VARCHAR(500)	Database datatype	2026-02-28 12:28:21.000
+Source_File_Mapping	Description	Description	VARCHAR(500)	Column Description	2026-02-28 12:28:21.000
+Brands	Principal Code	Principal_Code	VARCHAR(500)	Primary key	2026-02-28 12:28:21.000
+Brands	Brand code	Brand_Code	VARCHAR(500)	Primary key	2026-02-28 12:28:21.000
+Brands	Brand Name	Brand_Name	VARCHAR(500)	Name	2026-02-28 12:28:21.000
