@@ -228,5 +228,7 @@ def process_source(source_name: str):
 
 
 if __name__ == "__main__":
-    process_source("Source_Imports")
-    process_source("Source_File_Mapping")
+    # process_source("Source_Imports")
+    # process_source("Source_File_Mapping")
+
+    process_source("Principals")

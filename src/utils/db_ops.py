@@ -247,7 +247,7 @@ def generate_bcp_format_file(source_name: str, fmt_path: str):
 
     column_count = len(target_columns)
 
-    lines: list[str] = []
+    lines = []
     lines.append("14.0")
     lines.append(str(column_count))
 

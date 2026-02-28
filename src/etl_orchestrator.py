@@ -30,7 +30,7 @@ def run_config():
     return changed
 
 
-def run_staging(specific_sources: list[str] | None = None) -> tuple[list[str], list[str], int]:
+def run_staging(specific_sources=None):
     """Process all data sources (staging). Returns (processed, failed, total_rows)."""
     conn = get_connection()
     cursor = conn.cursor()
@@ -66,7 +66,7 @@ def run_staging(specific_sources: list[str] | None = None) -> tuple[list[str], l
     return processed, failed, total_rows
 
 
-def run_dimension_merges() -> list[str]:
+def run_dimension_merges():
     """Execute SP_Merge_Dim_* for each DW dimension. Returns list of merged sources."""
     dw_dims = get_config("dw_dimensions") or {}
     merged = []
@@ -82,7 +82,7 @@ def run_dimension_merges() -> list[str]:
     return merged
 
 
-def run_full_etl(specific_sources: list[str] | None = None, from_step: str = "config"):
+def run_full_etl(specific_sources=None, from_step="config"):
     """
     Orchestrates ETL. Supports --from config|staging|dims|facts.
     Each step includes its dependencies.

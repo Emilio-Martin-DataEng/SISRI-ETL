@@ -7,4 +7,4 @@
 5       SQLCHAR             0       500     "\t"       5     Description                            SQL_Latin1_General_CP1_CI_AS
 6       SQLCHAR             0       1       "\t"       6     Is_Type2_Attribute                     ""
 7       SQLCHAR             0       1       "\t"       7     Is_PK                                  ""
-8       SQLCHAR             0       24      "\r\n"     8     Inserted_Datetime                      ""
+8       SQLCHAR             0       20      "\r\n"     8     Inserted_Datetime                      ""

@@ -46,8 +46,8 @@ def process_etl_config():
     start_time = datetime.now()
 
     # Per-dataset audit tracking (created only when config file exists)
-    imports_audit_id: int | None = None
-    mapping_audit_id: int | None = None
+    imports_audit_id = None
+    mapping_audit_id = None
     imports_start_time = start_time
     mapping_start_time = start_time
 
@@ -98,7 +98,8 @@ def process_etl_config():
                     lambda v: "1" if str(v).upper() in ("TRUE", "1", "YES") else "0"
                 )
 
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S.000")
+        # ODBC BCP expects yyyy-mm-dd hh:mm:ss (no fractional seconds for compatibility)
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         df_imports["Inserted_Datetime"] = now_str
         df_mapping["Inserted_Datetime"] = now_str
 
