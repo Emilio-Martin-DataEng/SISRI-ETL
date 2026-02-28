@@ -14,7 +14,8 @@ from src.utils.db_ops import (
     insert_source_file_archive,
     log_audit_source_import,
     truncate_table,
-    get_connection
+    get_connection,
+    generate_bcp_format_file,
 )
 
 
@@ -145,10 +146,12 @@ def process_source(source_name: str):
         )
 
         config_folder = BASE_PATH() / get_config("base", "config_folder")
-        format_path = config_folder / "format" / f"{source_name.lower()}.fmt"
-        
-        if not format_path.exists():
-            raise FileNotFoundError(f"Format file not found: {format_path}")
+        format_dir = config_folder / "format"
+        format_dir.mkdir(parents=True, exist_ok=True)
+        format_path = format_dir / f"{source_name.lower()}.fmt"
+
+        # Auto-generate (or refresh) BCP format file based on metadata
+        generate_bcp_format_file(source_name, str(format_path))
 
         truncate_table(table_name)
 
@@ -205,6 +208,8 @@ def process_source(source_name: str):
             process_status='Success'
         )
 
+        return total_row_count
+
     except Exception as e:
         end_time = datetime.now()
         log_audit_source_import(
@@ -218,6 +223,7 @@ def process_source(source_name: str):
             pattern=pattern,
             process_status='Failed'
         )
+        return 0
         raise
 
 
