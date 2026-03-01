@@ -7,7 +7,7 @@ import pyodbc
 import csv
 import shutil
 
-from src.config import BASE_PATH, CONFIG_ROOT, get_db_config, get_config
+from src.config import BASE_PATH, CONFIG_ROOT, get_db_config, get_config, DATA_BASE_PATH, SYSTEM_BASE_PATH
 from src.utils.db import upload_via_bcp
 from src.utils.db_ops import (
     get_next_audit_import_id,
@@ -81,7 +81,8 @@ def process_source(source_name: str):
             process_status='Processing'
         )
 
-        folder = BASE_PATH() / rel_path
+        folder = DATA_BASE_PATH() / rel_path  # e.g. D:\Data\raw\Brands\
+        archive_dir = DATA_BASE_PATH() / archive_rel_path / datetime.now().strftime("%Y-%m") / source_name
         all_files = list(folder.glob(pattern))
         
         if not all_files:
@@ -147,7 +148,7 @@ def process_source(source_name: str):
 
         format_dir = CONFIG_ROOT / "format"
         format_dir.mkdir(parents=True, exist_ok=True)
-        format_path = format_dir / f"{source_name.lower()}.fmt"
+        format_path = SYSTEM_BASE_PATH() / get_config("system", "config_folder", "config") / get_config("system", "format_subfolder", "format") / f"{source_name.lower()}.fmt"
 
         # Auto-generate (or refresh) BCP format file based on metadata
         generate_bcp_format_file(source_name, str(format_path))
@@ -227,7 +228,7 @@ def process_source(source_name: str):
 
 
 if __name__ == "__main__":
-    # process_source("Source_Imports")
-    # process_source("Source_File_Mapping")
+    process_source("Source_Imports")
+    process_source("Source_File_Mapping")
 
     process_source("Principals")

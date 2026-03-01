@@ -5,7 +5,7 @@ import pandas as pd
 import csv
 from datetime import datetime
 
-from src.config import BASE_PATH, get_db_config, get_config
+from src.config import BASE_PATH, SYSTEM_BASE_PATH, get_db_config, get_config
 from src.utils.db import upload_via_bcp
 from src.utils.db_ops import (
     truncate_table,
@@ -23,6 +23,13 @@ from src.utils.ddl_generator import (  # NEW: Point 1-5,7
 def process_etl_config():
     start_time = datetime.now()
     audit_id = get_next_audit_import_id()
+    log_audit_source_import(...)  # unchanged
+
+    config_folder = SYSTEM_BASE_PATH() / get_config("system", "config_folder", "config")
+    format_dir = config_folder / get_config("system", "format_subfolder", "format")
+    temp_dir = SYSTEM_BASE_PATH() / get_config("system", "temp_folder", "temp")
+    logs_dir = SYSTEM_BASE_PATH() / get_config("system", "logs_folder", "logs")
+
     log_audit_source_import(
         audit_id=audit_id,
         source_import_sk=0,
@@ -91,8 +98,32 @@ def process_etl_config():
         truncate_table('ETL.Source_Imports')
         truncate_table('ETL.Source_File_Mapping')
 
-        upload_via_bcp(imports_path, 'ETL.Source_Imports', db_cfg, str(format_imports), 1)
-        upload_via_bcp(mapping_path, 'ETL.Source_File_Mapping', db_cfg, str(format_mapping), 1)
+        # Generate formats (you already have this)
+        generate_bcp_format_file('Source_Imports', str(format_imports))
+        generate_bcp_format_file('Source_File_Mapping', str(format_mapping))
+
+        # Relative paths for BCP
+        rel_imports_txt   = imports_path.relative_to(BASE_PATH())
+        rel_mapping_txt   = mapping_path.relative_to(BASE_PATH())
+        rel_imports_fmt   = format_imports.relative_to(BASE_PATH())
+        rel_mapping_fmt   = format_mapping.relative_to(BASE_PATH())
+
+        # BCP calls
+        upload_via_bcp(
+            file_path=rel_imports_txt,               # relative Path object or str(rel_imports_txt)
+            table='ETL.Source_Imports',
+            db_config=db_cfg,
+            format_file=str(rel_imports_fmt),        # relative!
+            first_row=1
+        )
+
+        upload_via_bcp(
+            file_path=rel_mapping_txt,
+            table='ETL.Source_File_Mapping',
+            db_config=db_cfg,
+            format_file=str(rel_mapping_fmt),
+            first_row=1
+        )
 
         execute_proc('ETL.SP_Merge_Dim_Source_Imports')
         execute_proc('ETL.SP_Merge_Dim_Source_Imports_Mapping')

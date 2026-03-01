@@ -1,5 +1,5 @@
 14.0
-8
+9
 1       SQLCHAR             0       100     "\t"       1     Source_Name                            SQL_Latin1_General_CP1_CI_AS
 2       SQLCHAR             0       100     "\t"       2     Source_Column                          SQL_Latin1_General_CP1_CI_AS
 3       SQLCHAR             0       100     "\t"       3     Target_Column                          SQL_Latin1_General_CP1_CI_AS
@@ -7,4 +7,5 @@
 5       SQLCHAR             0       500     "\t"       5     Description                            SQL_Latin1_General_CP1_CI_AS
 6       SQLCHAR             0       1       "\t"       6     Is_Type2_Attribute                     ""
 7       SQLCHAR             0       1       "\t"       7     Is_PK                                  ""
-8       SQLCHAR             0       20      "\r\n"     8     Inserted_Datetime                      ""
+8       SQLCHAR             0       1       "\t"       7     Is_Required                            ""
+9       SQLCHAR             0       30      "\r\n"     8     Inserted_Datetime                      ""

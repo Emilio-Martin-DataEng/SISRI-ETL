@@ -99,7 +99,8 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, columns: list[
     return ddl
 
 def generate_bcp_format_file(source_name: str, columns: list[dict], format_dir: Path) -> None:
-    """Generate .fmt - dynamic from Dim_Source_Imports_Mapping."""
+    """Generate .fmt file dynamically from Dim_Source_Imports_Mapping.
+    Maps Data_Type to BCP types (e.g., VARCHAR -> SQLCHAR)."""
     fmt_path = format_dir / f"{source_name.lower()}.fmt"
     if fmt_path.exists():
         return

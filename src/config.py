@@ -1,6 +1,8 @@
+# src/config.py
+from typing import Any, Dict
+import yaml
 from pathlib import Path
-import os
-from typing import Dict, Any
+from functools import lru_cache
 
 import yaml
 from dotenv import load_dotenv
@@ -11,6 +13,31 @@ load_dotenv()
 # print("SQLSERVER_PASSWORD value:", os.getenv("SQLSERVER_PASSWORD", "[NOT SET]"))
 PROJECT_ROOT = Path(__file__).parent.parent  # points to project root
 CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
+
+CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
+
+@lru_cache()
+def load_config():
+    if not CONFIG_PATH.exists():
+        raise FileNotFoundError(f"config.yaml missing: {CONFIG_PATH}")
+    with open(CONFIG_PATH, encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+def get_config(section: str, key: str, default=None):
+    config = load_config()
+    return config.get(section, {}).get(key, default)
+
+def SYSTEM_BASE_PATH():
+    """Fixed path for admin/system files (logs, temp, config, format, DDL)."""
+    base = get_config("system", "base_path", default="")
+    return Path(base) if base else Path(__file__).parent.parent.parent  # project root
+
+def DATA_BASE_PATH():
+    """Base path for data files — can be different from system (local/network/OneDrive)."""
+    base = get_config("data", "base_path", default="")
+    if base:
+        return Path(base)
+    return SYSTEM_BASE_PATH() / "data"  # fallback
 
 
 class Config:
@@ -67,6 +94,9 @@ class Config:
         logs_dir = Path(logs_rel)  # relative to project root
         logs_dir.mkdir(parents=True, exist_ok=True)
         return logs_dir
+    
+ 
+   
 
 # Convenience exports
 get_logs_dir = Config.get_logs_dir
@@ -79,3 +109,5 @@ get_db_config = Config.db_config
 BASE_PATH = lambda: Path(get_config("base", "file_root"))
 # Config root: config files, format files, DDL (always under project root)
 CONFIG_ROOT = PROJECT_ROOT / "config"
+
+  
