@@ -29,7 +29,7 @@ logs:
 
 # DW DDL: generated scripts (inspection), run (engineer copies here), archive (after success)
 dw_ddl:
-  base_folder: "config/DW_DDL"
+  base_folder: "DW_DDL"
   generated_folder: "generated"
   run_folder: "run"
   archive_folder: "archive"
