@@ -1,113 +1,125 @@
 # src/config.py
+"""
+Central configuration loader for SISRI-ETL.
+Loads config.yaml + .env, provides path helpers and DB config.
+"""
+
+import os
 from typing import Any, Dict
 import yaml
 from pathlib import Path
 from functools import lru_cache
-
-import yaml
 from dotenv import load_dotenv
 
-# Load .env early
+# Load .env early for ${VAR} interpolation
 load_dotenv()
-# print("Loaded .env → SQLSERVER_PASSWORD exists?", "SQLSERVER_PASSWORD" in os.environ)
-# print("SQLSERVER_PASSWORD value:", os.getenv("SQLSERVER_PASSWORD", "[NOT SET]"))
-PROJECT_ROOT = Path(__file__).parent.parent  # points to project root
-CONFIG_PATH = PROJECT_ROOT / "config" / "config.yaml"
+print("DEBUG: SQLSERVER_PASSWORD from env:", os.getenv("SQLSERVER_PASSWORD", "[NOT SET]"))
 
-CONFIG_PATH = Path(__file__).parent.parent / "config.yaml"
+# Project root (one level up from src/)
+PROJECT_ROOT = Path(__file__).parent.parent
+
+# Config file location (fixed in project root)
+CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 
 @lru_cache()
-def load_config():
+def load_config() -> Dict[str, Any]:
+    print("DEBUG: Looking for config.yaml at:", CONFIG_PATH.absolute())
+    
     if not CONFIG_PATH.exists():
-        raise FileNotFoundError(f"config.yaml missing: {CONFIG_PATH}")
+        print("DEBUG: config.yaml NOT FOUND!")
+        raise FileNotFoundError(f"Config file not found: {CONFIG_PATH}")
+    
     with open(CONFIG_PATH, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        raw = f.read()
+        print("DEBUG: Raw config.yaml content (first 500 chars):\n", raw[:500])
+        
+        config = yaml.safe_load(raw)
+        
+        # NEW: Recursively interpolate ${VAR} placeholders
+        def interpolate(d):
+            if isinstance(d, dict):
+                return {k: interpolate(v) for k, v in d.items()}
+            if isinstance(d, list):
+                return [interpolate(item) for item in d]
+            if isinstance(d, str) and d.startswith("${") and d.endswith("}"):
+                env_key = d[2:-1]
+                value = os.getenv(env_key)
+                if value is None:
+                    raise ValueError(f"Missing env var: {env_key}")
+                print(f"DEBUG: Interpolated {env_key} → {value[:3]}***")  # mask for security
+                return value
+            return d
+        
+        config = interpolate(config)
+        print("DEBUG: Parsed & interpolated config keys:", list(config.keys()))
+        return config
 
-def get_config(section: str, key: str, default=None):
+def get_config(section: str, key: str, default: Any = None) -> Any:
+    """
+    Get a value from config.yaml.
+    Example: get_config("database", "server")
+    """
     config = load_config()
     return config.get(section, {}).get(key, default)
 
-def SYSTEM_BASE_PATH():
+def get_db_config() -> Dict[str, str]:
+    """
+    Returns database connection details from config.yaml.
+    Uses the flat 'database' section structure.
+    """
+    config = load_config()
+    print("DEBUG: Full config loaded in get_db_config:", config)
+    
+    db_section = config.get("database", {})
+    print("DEBUG: db_section:", db_section)
+    
+    if not db_section:
+        raise ValueError("No 'database' section found in config.yaml")
+    
+    required_keys = ["server", "database", "username", "password"]
+    missing = [k for k in required_keys if k not in db_section or not db_section[k]]
+    if missing:
+        raise ValueError(f"Missing required database keys: {', '.join(missing)}")
+    
+    print("DEBUG: Using flat database structure")
+    return {
+        "server": db_section["server"],
+        "database": db_section["database"],
+        "username": db_section["username"],
+        "password": db_section["password"],
+        "type": db_section.get("type", "sqlserver")
+    }
+
+def SYSTEM_BASE_PATH() -> Path:
     """Fixed path for admin/system files (logs, temp, config, format, DDL)."""
     base = get_config("system", "base_path", default="")
-    return Path(base) if base else Path(__file__).parent.parent.parent  # project root
+    if base:
+        return Path(base)
+    return PROJECT_ROOT  # auto-detect project root
 
-def DATA_BASE_PATH():
-    """Base path for data files — can be different from system (local/network/OneDrive)."""
+def DATA_BASE_PATH() -> Path:
+    """Base path for data files (raw, archive, rejected) — flexible for data capturers."""
     base = get_config("data", "base_path", default="")
     if base:
         return Path(base)
     return SYSTEM_BASE_PATH() / "data"  # fallback
 
+def get_logs_dir() -> Path:
+    """Returns the logs directory (creates if missing)."""
+    logs_rel = get_config("logs", "rel_path", default="logs")
+    logs_dir = SYSTEM_BASE_PATH() / logs_rel
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    return logs_dir
 
-class Config:
-    _data: Dict[str, Any] = {}
+# Legacy compatibility (if any old code uses BASE_PATH)
+BASE_PATH = SYSTEM_BASE_PATH  # alias for backward compatibility
 
-    @classmethod
-    def load(cls):
-        if cls._data:
-            return
-
-        if not CONFIG_PATH.exists():
-            raise FileNotFoundError(f"Config file not found: {CONFIG_PATH}")
-
-        with CONFIG_PATH.open("r", encoding="utf-8") as f:
-            raw = yaml.safe_load(f)
-
-        # Simple environment variable interpolation
-        def interpolate(d):
-            if isinstance(d, dict):
-                return {k: interpolate(v) for k, v in d.items()}
-            elif isinstance(d, str) and d.startswith("${") and d.endswith("}"):
-                env_key = d[2:-1]
-                value = os.getenv(env_key)
-                if value is None:
-                    raise ValueError(f"Missing environment variable: {env_key}")
-                return value
-            else:
-                return d
-
-        cls._data = interpolate(raw)
-
-    @classmethod
-    def get(cls, *keys, default=None):
-        if not cls._data:
-            cls.load()
-
-        data = cls._data
-        for key in keys:
-            if isinstance(data, dict):
-                data = data.get(key, default)
-            else:
-                return default
-        return data
-
-    @classmethod
-    def db_config(cls):
-        db_type = cls.get("database", "type", default=cls.get("database", "default"))
-        return cls.get("connections", db_type)
-    
-    @classmethod
-    def get_logs_dir(cls) -> Path:
-        """Returns the logs directory (creates it if missing)."""
-        logs_rel = cls.get("logs", "rel_path", default="Logs")
-        logs_dir = Path(logs_rel)  # relative to project root
-        logs_dir.mkdir(parents=True, exist_ok=True)
-        return logs_dir
-    
- 
-   
-
-# Convenience exports
-get_logs_dir = Config.get_logs_dir
-
-
-# Convenience shortcuts
-get_config = Config.get
-get_db_config = Config.db_config
-# Data root: raw files, archive, staging (configurable, e.g. C:\SISRI)
-BASE_PATH = lambda: Path(get_config("base", "file_root"))
-# Config root: config files, format files, DDL (always under project root)
-CONFIG_ROOT = PROJECT_ROOT / "config"
-
-  
+# Optional: interpolation helper (already handled by dotenv + yaml)
+def interpolate_value(value: Any) -> Any:
+    if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
+        env_key = value[2:-1]
+        env_value = os.getenv(env_key)
+        if env_value is None:
+            raise ValueError(f"Missing environment variable: {env_key}")
+        return env_value
+    return value

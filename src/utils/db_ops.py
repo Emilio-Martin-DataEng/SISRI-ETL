@@ -16,13 +16,17 @@ from src.config import get_db_config
 
 def get_connection():
     db_cfg = get_db_config()
+    print("DEBUG: db_cfg =", db_cfg)  # <-- add this line
+    if db_cfg is None:
+        raise ValueError("get_db_config returned None")
+    
     conn_str = (
         f"DRIVER={{ODBC Driver 17 for SQL Server}};"
         f"SERVER={db_cfg['server']};"
         f"DATABASE={db_cfg['database']};"
         f"UID={db_cfg['username']};"
         f"PWD={db_cfg['password']};"
-        f"AUTOCOMMIT=ON"  # Prevents lingering transactions
+        f"AUTOCOMMIT=ON"
     )
     return pyodbc.connect(conn_str)
 
@@ -270,8 +274,8 @@ def generate_bcp_format_file(source_name: str, fmt_path: str):
         )
         lines.append(line)
 
-    fmt_dir = Path(fmt_path).parent
-    fmt_dir.mkdir(parents=True, exist_ok=True)
+        fmt_dir = Path(fmt_path).parent
+        fmt_dir.mkdir(parents=True, exist_ok=True)
 
     with open(fmt_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")

@@ -1,67 +1,35 @@
+# config.yaml - SISRI-ETL (cleaned & extended)
 base:
-  file_root: "C:/SISRI"                     # Root folder for all raw data
-  config_folder: "config"                   # Folder where ETL_Config.xlsx lives
-  config_filename: "ETL_Config.xlsx"        # Exact name of the configuration spreadsheet
+  file_root: "C:/SISRI"
+  config_folder: "config"                    # ← add this
+  config_filename: "ETL_Config.xlsx"         # ← add this
+
+system:                                      # FIXED paths - admin only
+  base_path: ""                              # empty = auto-detect project root
+  config_folder: "config"
+  config_filename: "ETL_Config.xlsx"
+  format_subfolder: "format"
+  logs_folder: "logs"
+  temp_folder: "temp"
+  ddl_generated_subfolder: "DW_DDL/generated"
+  ddl_run_subfolder: "DW_DDL/run"
+  ddl_archive_subfolder: "DW_DDL/archive"
+
+data:                                        # FLEXIBLE paths - data capturer role
+  base_path: ""                              # empty = fallback to file_root / data
+  # Per-source overrides live in Dim_Source_Imports (Rel_Path, Archive_Rel_Path)
+  archive_base: "archive"                    # default relative to data.base_path
 
 database:
+  server: "Emilio"
+  database: "SISRI"
+  username: "etl_user"
+  password: "${SQLSERVER_PASSWORD}"
   type: "sqlserver"
-  default: "sqlserver"
-
-connections:
-  sqlserver:
-    server: "Emilio"
-    database: "SISRI"
-    username: "etl_user"
-    password: "${SQLSERVER_PASSWORD}"
-    # driver: "ODBC Driver 17 for SQL Server"   # uncomment if needed
-
-  postgresql:
-    host: "localhost"
-    port: 5432
-    database: "sales_dw"
-    user: "etl_user"
-    password: "${PG_PASSWORD}"
-
 logs:
-  rel_path: "logs"
   bcp_errors_prefix: "bcp_errors"
-  archive_staging: true
 
-# DW DDL: generated scripts (inspection), run (engineer copies here), archive (after success)
-dw_ddl:
-  base_folder: "DW_DDL"
-  generated_folder: "generated"
-  run_folder: "run"
-  archive_folder: "archive"
-  state_folder: "state"
-
-# DW dimension sources (Source_Name -> DW table)
-dw_dimensions:
-  Principals: "DW.Dim_Principals"
-  Brands: "DW.Dim_Brands"
-
-# ETL metadata dimensions (generated merge procs; Source_Imports has SCD Type 2)
-# Source_File_Mapping proc stays in migration (has Source_Import_SK lookup)
-metadata_dimensions:
-  Source_Imports: "ETL.Dim_Source_Imports"
-
-# Optional: settings for the config loader itself
+# Optional future sections
 etl_config_loader:
   sheet_imports: "Source_Imports"
   sheet_mapping: "Source_File_Mapping"
-  staging_schema: "ETL"
-  source_imports_table: "Source_Imports"
-  source_file_mapping_table: "Source_File_Mapping"
-
-system:
-  base_path: ""  # empty = auto-detect project root (recommended)
-  logs_folder: logs
-  temp_folder: temp
-  config_folder: config
-  format_subfolder: format
-  ddl_generated_subfolder: DW_DDL/generated
-  ddl_run_subfolder: DW_DDL/run
-
-data:
-  base_path: ""  # empty = use system.base_path / data/ (can override later)
-  # per-source overrides will live in Dim_Source_Imports (Rel_Path, Archive_Path, etc.)

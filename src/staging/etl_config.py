@@ -21,18 +21,26 @@ from src.utils.ddl_generator import (  # NEW: Point 1-5,7
 )
 
 def process_etl_config():
+    """
+    Loads ETL configuration from Excel into staging tables,
+    merges to dimension tables via stored procedures,
+    and logs the process to audit table.
+    """
     start_time = datetime.now()
-    audit_id = get_next_audit_import_id()
-    log_audit_source_import(...)  # unchanged
 
-    config_folder = SYSTEM_BASE_PATH() / get_config("system", "config_folder", "config")
-    format_dir = config_folder / get_config("system", "format_subfolder", "format")
-    temp_dir = SYSTEM_BASE_PATH() / get_config("system", "temp_folder", "temp")
-    logs_dir = SYSTEM_BASE_PATH() / get_config("system", "logs_folder", "logs")
+    # NEW: Get the real Source_Import_SK for the config loader itself FIRST
+    config_source_sk = get_source_import_sk('Source_Imports')  # 'Source_Imports' is the name in Dim_Source_Imports
+
+    # If no SK yet (first run or not merged), fall back to 0
+    if config_source_sk == 0:
+        print("[WARNING] No Source_Import_SK found for 'Source_Imports' yet — using 0 temporarily")
+
+    # Create audit entry using the real SK (or 0)
+    audit_id = get_next_audit_import_id()
 
     log_audit_source_import(
         audit_id=audit_id,
-        source_import_sk=0,
+        source_import_sk=config_source_sk,          # ← real SK here!
         start_time=start_time,
         end_time=None,
         total_row_count=0,
@@ -41,13 +49,17 @@ def process_etl_config():
         pattern=None,
         process_status='Running'
     )
-    print(f"[AUDIT] Started audit entry: Audit_Source_Import_SK = {audit_id}")
-
+    print(f"[AUDIT] Started audit entry: Audit_Source_Import_SK = {audit_id} "
+          f"(linked to Source_Import_SK = {config_source_sk})")
+    
     error_count = 0  # NEW: Point 9 for no empty error logs
 
     try:
-        config_folder = BASE_PATH() / get_config("base", "config_folder")
-        config_filename = get_config("base", "config_filename")
+        config_folder_name = get_config("base", "config_folder") or get_config("system", "config_folder") or "config"
+        config_filename = get_config("base", "config_filename") or get_config("system", "config_filename") or "ETL_Config.xlsx"
+
+        config_folder = SYSTEM_BASE_PATH() / config_folder_name
+        config_files = list(config_folder.glob(config_filename))
         config_files = list(config_folder.glob(config_filename))
         
         if not config_files:
@@ -84,7 +96,7 @@ def process_etl_config():
         df_imports['Inserted_Datetime'] = now_str
         df_mapping['Inserted_Datetime'] = now_str
 
-        temp_dir = Path("temp")
+        temp_dir = SYSTEM_BASE_PATH() / (get_config("system", "temp_folder") or "temp")
         temp_dir.mkdir(exist_ok=True)
         
         imports_path = temp_dir / "source_imports_stg.txt"
@@ -140,36 +152,48 @@ def process_etl_config():
         real_sk = get_source_import_sk('Source_Imports')
         print(f"[DEBUG] Config SK: {real_sk}")
 
+        # Success update
         end_time = datetime.now()
         row_count = len(df_imports) + len(df_mapping)
         log_audit_source_import(
             audit_id=audit_id,
-            source_import_sk=real_sk,
+            source_import_sk=config_source_sk,          # consistent with start
             start_time=start_time,
             end_time=end_time,
             total_row_count=row_count,
             total_file_count=1,
-            exception_detail=None
+            exception_detail=None,
+            pattern=config_filename,
+            process_status='Success'
         )
-        print("Config loaded!")
+ 
 
         # NEW: Point 6 - Apply DDL if files in run/
         apply_ddl_from_run()
 
     except Exception as e:
-        error_count += 1
         end_time = datetime.now()
         log_audit_source_import(
             audit_id=audit_id,
-            source_import_sk=0,
+            source_import_sk=config_source_sk,
             start_time=start_time,
             end_time=end_time,
             total_row_count=0,
             total_file_count=0,
             exception_detail=str(e),
+            pattern=None,
             process_status='Failed'
         )
         print(f"Config failed: {e}")
+
+        # Safe logs dir creation
+        logs_dir = SYSTEM_BASE_PATH() / (get_config("system", "logs_folder") or "logs")
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        error_log_path = logs_dir / f"etl_errors_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        with open(error_log_path, "w", encoding="utf-8") as f:
+            f.write(f"{datetime.now()}: {str(e)}\n")
+        print(f"Error details saved to: {error_log_path}")
+
         raise
 
     finally:
