@@ -4,6 +4,7 @@ pyodbc  # Optional for SQL verification
 psycopg2-binary  # For PostgreSQL
 pyyaml
 python-dotenv
+pytest
 
 ############
 # To install all requirements
