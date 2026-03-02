@@ -12,11 +12,11 @@ from src.utils.db_ops import (
     execute_proc,
     log_audit_source_import,
     get_next_audit_import_id,
-    get_source_import_sk
+    get_source_import_sk,
+    generate_bcp_format_file,
 )
 from src.utils.ddl_generator import (  # NEW: Point 1-5,7
     generate_ods_table_ddl,
-    generate_bcp_format_file,
     apply_ddl_from_run
 )
 
@@ -92,7 +92,7 @@ def process_etl_config():
         df_imports = df_imports.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
         df_mapping = df_mapping.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
 
-        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S.000')
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         df_imports['Inserted_Datetime'] = now_str
         df_mapping['Inserted_Datetime'] = now_str
 
@@ -111,8 +111,9 @@ def process_etl_config():
         truncate_table('ETL.Source_File_Mapping')
 
         # Generate formats (you already have this)
-        generate_bcp_format_file('Source_Imports', format_imports)     # Path object or str(format_imports)
-        generate_bcp_format_file('Source_File_Mapping', format_mapping)
+        # print("[DEBUG] Calling generate_bcp_format_file for Source_Imports with path:", format_imports)
+        # generate_bcp_format_file('Source_Imports', format_imports)     # Path object or str(format_imports)
+        # generate_bcp_format_file('Source_File_Mapping', format_mapping)
 
         # Relative paths for BCP
         rel_imports_txt   = imports_path.relative_to(BASE_PATH())

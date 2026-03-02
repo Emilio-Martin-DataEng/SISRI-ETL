@@ -98,23 +98,23 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, columns: list[
     )
     return ddl
 
-def generate_bcp_format_file(source_name: str, columns: list[dict], format_dir: Path) -> None:
-    """Generate .fmt file dynamically from Dim_Source_Imports_Mapping.
-    Maps Data_Type to BCP types (e.g., VARCHAR -> SQLCHAR)."""
-    fmt_path = format_dir / f"{source_name.lower()}.fmt"
-    if fmt_path.exists():
-        return
+# def generate_bcp_format_file(source_name: str, columns: list[dict], format_dir: Path) -> None:
+#     """Generate .fmt file dynamically from Dim_Source_Imports_Mapping.
+#     Maps Data_Type to BCP types (e.g., VARCHAR -> SQLCHAR)."""
+#     fmt_path = format_dir / f"{source_name.lower()}.fmt"
+#     if fmt_path.exists():
+#         return
 
-    fmt_content = "14.0\n" + str(len(columns) + 1) + "\n"
+#     fmt_content = "14.0\n" + str(len(columns) + 1) + "\n"
     
-    for i, col in enumerate(columns, 1):
-        bcp_type = "SQLCHAR" if "VARCHAR" in col['Data_Type'].upper() or "TEXT" in col['Data_Type'].upper() else "SQLINT" if "INT" in col['Data_Type'].upper() else "SQLDATETIME" if "DATE" in col['Data_Type'].upper() else "SQLCHAR"
-        fmt_content += f"{i} {bcp_type} 0 0 \"\\t\" {i} {col['Target_Column']} SQL_Latin1_General_CP1_CI_AS\n"
+#     for i, col in enumerate(columns, 1):
+#         bcp_type = "SQLCHAR" if "VARCHAR" in col['Data_Type'].upper() or "TEXT" in col['Data_Type'].upper() else "SQLINT" if "INT" in col['Data_Type'].upper() else "SQLDATETIME" if "DATE" in col['Data_Type'].upper() else "SQLCHAR"
+#         fmt_content += f"{i} {bcp_type} 0 0 \"\\t\" {i} {col['Target_Column']} SQL_Latin1_General_CP1_CI_AS\n"
     
-    fmt_content += f"{len(columns)+1} SQLDATETIME 0 0 \"\\r\\n\" {len(columns)+1} Inserted_Datetime SQL_Latin1_General_CP1_CI_AS\n"
+#     fmt_content += f"{len(columns)+1} SQLDATETIME 0 0 \"\\r\\n\" {len(columns)+1} Inserted_Datetime SQL_Latin1_General_CP1_CI_AS\n"
     
-    fmt_path.write_text(fmt_content)
-    print(f"Generated BCP format: {fmt_path}")
+#     fmt_path.write_text(fmt_content)
+#     print(f"Generated BCP format: {fmt_path}")
 
 def apply_ddl_from_run(base_path: Path):
     """Apply DDL from run/ folder."""
