@@ -111,8 +111,8 @@ def process_etl_config():
         truncate_table('ETL.Source_File_Mapping')
 
         # Generate formats (you already have this)
-        generate_bcp_format_file('Source_Imports', str(format_imports))
-        generate_bcp_format_file('Source_File_Mapping', str(format_mapping))
+        generate_bcp_format_file('Source_Imports', format_imports)     # Path object or str(format_imports)
+        generate_bcp_format_file('Source_File_Mapping', format_mapping)
 
         # Relative paths for BCP
         rel_imports_txt   = imports_path.relative_to(BASE_PATH())

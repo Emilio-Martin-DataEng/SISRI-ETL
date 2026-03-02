@@ -208,21 +208,15 @@ def insert_source_file_archive(
     return new_sk
 
 
-def generate_bcp_format_file(source_name: str, fmt_path: str):
+def generate_bcp_format_file(source_name: str, fmt_path: str | Path):
     """
-    Generate a BCP format file for a given source based on
-    ETL.Dim_Source_Imports_Mapping.
-
-    Rules:
-    - One entry per Target_Column (Is_Deleted = 0), ordered by File_Mapping_SK
-    - All fields treated as SQLCHAR with a generous length (500 chars),
-      except Inserted_Datetime which uses length 30
-    - Field terminator: "\\t" for all but the last column
-    - Row terminator: "\\r\\n" for the last column only
-
-    This avoids relying on `bcp ... format nul` and fixes the
-    unwanted "\\r\\r\\n" row terminator.
+    Generate BCP format file for a source.
+    fmt_path is the full path to save (e.g. config/format/source_imports.fmt)
     """
+    fmt_path = Path(fmt_path)  # ensure it's Path
+    fmt_dir = fmt_path.parent
+    fmt_dir.mkdir(parents=True, exist_ok=True)
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -244,8 +238,6 @@ def generate_bcp_format_file(source_name: str, fmt_path: str):
 
     target_columns = [row[1] for row in rows]
 
-    # Ensure Inserted_Datetime is always the last column,
-    # matching the staging text file layout.
     if "Inserted_Datetime" not in target_columns:
         target_columns.append("Inserted_Datetime")
 
@@ -258,8 +250,6 @@ def generate_bcp_format_file(source_name: str, fmt_path: str):
     for idx, col_name in enumerate(target_columns, start=1):
         is_last = idx == column_count
         terminator = "\\r\\n" if is_last else "\\t"
-
-        # Generous length defaults – actual SQL types live in the table
         length = 30 if col_name == "Inserted_Datetime" else 500
 
         line = (
@@ -274,10 +264,9 @@ def generate_bcp_format_file(source_name: str, fmt_path: str):
         )
         lines.append(line)
 
-        fmt_dir = Path(fmt_path).parent
-        fmt_dir.mkdir(parents=True, exist_ok=True)
-
     with open(fmt_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+
+    print(f"[BCP] Generated format file: {fmt_path}")
 
 
