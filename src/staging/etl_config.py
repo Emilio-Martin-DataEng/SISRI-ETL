@@ -15,7 +15,7 @@ from src.utils.db_ops import (
     get_next_audit_import_id,
     get_source_import_sk
 )
-from src.utils.ddl_generator import generate_ods_table_ddl, generate_merge_proc_ddl, generate_dw_table_ddl, apply_ddl_from_run
+from src.utils.ddl_generator import generate_ods_table_ddl, generate_dw_table_ddl, generate_merge_proc_ddl, apply_ddl_from_run
 
 def process_etl_config():
     start_time = datetime.now()
@@ -37,8 +37,6 @@ def process_etl_config():
         process_status='Running'
     )
     print(f"[AUDIT] Started audit entry: Audit_Source_Import_SK = {audit_id} (linked to Source_Import_SK = {config_source_sk})")
-
-    error_count = 0
 
     try:
         config_folder = SYSTEM_BASE_PATH() / get_config("system", "config_folder", "config")
@@ -85,29 +83,8 @@ def process_etl_config():
         imports_path = temp_dir / "source_imports_stg.txt"
         mapping_path = temp_dir / "source_file_mapping_stg.txt"
 
-        df_imports.to_csv(
-            imports_path,
-            sep='\t',
-            index=False,
-            header=False,
-            encoding='utf-8',
-            lineterminator='\r\n',
-            quoting=csv.QUOTE_NONE,
-            escapechar='\\',
-            na_rep=''
-        )
-
-        df_mapping.to_csv(
-            mapping_path,
-            sep='\t',
-            index=False,
-            header=False,
-            encoding='utf-8',
-            lineterminator='\r\n',
-            quoting=csv.QUOTE_NONE,
-            escapechar='\\',
-            na_rep=''
-        )
+        df_imports.to_csv(imports_path, sep='\t', index=False, header=False, encoding='utf-8', lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
+        df_mapping.to_csv(mapping_path, sep='\t', index=False, header=False, encoding='utf-8', lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
 
         db_cfg = get_db_config()
 
@@ -132,12 +109,10 @@ def process_etl_config():
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
         for source in active_data_sources:
-            # Get last checked time
             cursor.execute("EXEC [ETL].[SP_Get_Source_Imports_Last_Checked] ?", source)
             last_checked_row = cursor.fetchone()
             last_checked = last_checked_row[0] if last_checked_row else None
 
-            # Get max mapping change time
             cursor.execute("""
                 SELECT MAX(Inserted_Datetime) 
                 FROM [ETL].[Dim_Source_Imports_Mapping] 
@@ -150,19 +125,15 @@ def process_etl_config():
                 
                 source_mapping = df_mapping[df_mapping['Source_Name'] == source].to_dict('records')
 
-                # Generate ODS DDL
                 ods_ddl = generate_ods_table_ddl(source, source_mapping)
                 (generated_dir / f"ODS_{source}.sql").write_text(ods_ddl)
 
-                # Generate DW table DDL with backup + insert
                 dw_ddl = generate_dw_table_ddl('DW', f"Dim_{source}", source_mapping, timestamp)
                 (generated_dir / f"DW_Dim_{source}.sql").write_text(dw_ddl)
-                print(f"[DDL] 3")
-                # Generate merge proc DDL
+
                 merge_ddl = generate_merge_proc_ddl(source, f"ODS.{source}", source_mapping)
                 (generated_dir / f"SP_Merge_Dim_{source}.sql").write_text(merge_ddl)
 
-                # Update last checked time
                 execute_proc('ETL.SP_Update_Source_Imports_Last_Checked', f"@SourceName = '{source}', @LastChecked = '{now_str}'")
 
             else:
@@ -209,5 +180,5 @@ def process_etl_config():
 
         raise
 
-if __name__ == "__module__":
+if __name__ == "__main__":
     process_etl_config()

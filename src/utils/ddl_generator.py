@@ -1,4 +1,13 @@
 # src/utils/ddl_generator.py
+"""
+Generates DDL for ODS and DW tables + merge procs.
+- Trims field names
+- Implements Is_PK as UNIQUE on natural keys + surrogate _SK PK in DIM
+- Implements Is_Required for nullable
+- SCD2 columns only in DIM (top of table)
+- Backup INSERT uses explicit column list (no *)
+- Only for real data sources
+"""
 from datetime import datetime
 from pathlib import Path
 
@@ -6,56 +15,68 @@ from src.config import BASE_PATH
 from src.utils.db_ops import execute_proc
 
 def generate_ods_table_ddl(source_name: str, columns: list[dict]) -> str:
-    is_scd2 = any(c.get('Is_Type2_Attribute', True) for c in columns)
-    
-    pk_cols = [c['Target_Column'] for c in columns if c.get('Is_PK', True)]
+    """ODS table - clean, no SCD2 columns."""
+    pk_cols = [c['Target_Column'].strip() for c in columns if c.get('Is_PK', False)]
     pk_clause = f", CONSTRAINT PK_{source_name} PRIMARY KEY ({', '.join([f'[{col}]' for col in pk_cols])})" if pk_cols else ""
     
     column_defs = []
     for col in columns:
+        col_name = col['Target_Column'].strip()
         nullability = "NOT NULL" if col.get('Is_Required', False) else "NULL"
-        column_defs.append(f"    [{col['Target_Column']}] {col['Data_Type']} {nullability}")
+        column_defs.append(f"    [{col_name}] {col['Data_Type']} {nullability}")
     
-    if is_scd2:
-        column_defs.extend([
-            "    [Row_Is_Current] BIT NOT NULL DEFAULT 1",
-            "    [Row_Effective_Datetime] DATETIME NOT NULL DEFAULT GETDATE()",
-            "    [Row_Expiry_Datetime] DATETIME NULL"
-        ])
-    
-    ddl = """IF OBJECT_ID('ODS.{0}', 'U') IS NULL
-CREATE TABLE [ODS].[{0}] (
-{1},
+    ddl = f"""IF OBJECT_ID('ODS.{source_name}', 'U') IS NULL
+CREATE TABLE [ODS].[{source_name}] (
+{',\n'.join(column_defs)},
     [Inserted_Datetime] DATETIME2 NOT NULL DEFAULT GETDATE()
-{2}
-);""".format(source_name, ',\n'.join(column_defs), pk_clause)
+{pk_clause}
+);"""
     return ddl
 
 def generate_dw_table_ddl(schema: str, table_name: str, columns: list[dict], timestamp: str) -> str:
-    column_defs = []
-    for col in columns:
-        nullability = "NOT NULL" if col.get('Is_Required', False) else "NULL"
-        column_defs.append(f"    [{col['Target_Column']}] {col['Data_Type']} {nullability}")
+    """DW table with backup rename + explicit INSERT (no *)."""
+    # Surrogate SK PK
+    sk_col = f"{table_name.replace('Dim_', '')}_SK"
     
-    ddl = """IF OBJECT_ID('{0}.{1}', 'U') IS NOT NULL
+    column_defs = [f"    [{sk_col}] INT IDENTITY(1,1) NOT NULL CONSTRAINT [PK_{table_name}] PRIMARY KEY"]
+    
+    for col in columns:
+        col_name = col['Target_Column'].strip()
+        nullability = "NOT NULL" if col.get('Is_Required', False) else "NULL"
+        column_defs.append(f"    [{col_name}] {col['Data_Type']} {nullability}")
+    
+    # SCD2 columns at top of DIM (only in DIM)
+    if any(c.get('Is_Type2_Attribute', False) for c in columns):
+        column_defs = [
+            "    [Row_Is_Current] BIT NOT NULL DEFAULT 1",
+            "    [Row_Effective_Datetime] DATETIME NOT NULL DEFAULT GETDATE()",
+            "    [Row_Expiry_Datetime] DATETIME NULL",
+        ] + column_defs[1:]  # insert after SK
+    
+    column_defs.append("    [Inserted_Datetime] DATETIME2 NOT NULL DEFAULT GETDATE()")
+    column_defs.append("    [Updated_Datetime] DATETIME NULL")
+    
+    # Explicit column list for backup INSERT (only common columns)
+    common_cols = [c['Target_Column'].strip() for c in columns] + ["Inserted_Datetime", "Updated_Datetime"]
+    insert_list = ', '.join([f'[{col}]' for col in common_cols])
+    
+    ddl = f"""IF OBJECT_ID('{schema}.{table_name}', 'U') IS NOT NULL
 BEGIN
-    EXEC sp_rename '{0}.{1}', '{1}_backup_{2}';
-    -- Create new table
-    CREATE TABLE [{0}].[{1}] (
-{3},
-    [Inserted_Datetime] DATETIME2 NOT NULL DEFAULT GETDATE()
+    EXEC sp_rename '{schema}.{table_name}', '{table_name}_backup_{timestamp}';
+    CREATE TABLE [{schema}].[{table_name}] (
+{',\n'.join(column_defs)}
     );
-    -- Insert backed up data
-    INSERT INTO [{0}].[{1}] SELECT * FROM [{0}].[{1}_backup_{2}];
+    INSERT INTO [{schema}].[{table_name}] ({insert_list})
+    SELECT {insert_list} FROM [{schema}].[{table_name}_backup_{timestamp}];
 END
 ELSE
 BEGIN
-    CREATE TABLE [{0}].[{1}] (
-{3},
-    [Inserted_Datetime] DATETIME2 NOT NULL DEFAULT GETDATE()
+    CREATE TABLE [{schema}].[{table_name}] (
+{',\n'.join(column_defs)}
     );
-END""".format(schema, table_name, timestamp, ',\n'.join(column_defs))
+END"""
     return ddl
+
 
 def generate_merge_proc_ddl(source_name: str, staging_table: str, columns: list[dict]) -> str:
 

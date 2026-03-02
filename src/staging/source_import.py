@@ -87,6 +87,8 @@ def process_source(source_name: str):
         folder = DATA_BASE_PATH() / rel_path
         all_files = sorted(folder.glob(pattern))
 
+        print(DATA_BASE_PATH() / rel_path)
+
         if not all_files:
             log_audit_source_import(
                 audit_id=audit_id,
@@ -135,7 +137,7 @@ def process_source(source_name: str):
 
         final_df = final_df.drop(columns=['Inserted_Datetime'], errors='ignore')
 
-        insert_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.000')
+        insert_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         final_df['Inserted_Datetime'] = insert_timestamp
 
         expected_cols = list(column_map.values()) + ['Inserted_Datetime']

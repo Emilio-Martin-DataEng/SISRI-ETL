@@ -16,7 +16,7 @@ system:                                      # FIXED paths - admin only
   ddl_archive_subfolder: "DW_DDL/archive"
 
 data:                                        # FLEXIBLE paths - data capturer role
-  base_path: ""                              # empty = fallback to file_root / data
+  base_path: "C:/SISRI"                             # empty = fallback to file_root / data
   # Per-source overrides live in Dim_Source_Imports (Rel_Path, Archive_Rel_Path)
   archive_base: "archive"                    # default relative to data.base_path
 
