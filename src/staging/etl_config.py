@@ -8,12 +8,12 @@ from datetime import datetime
 from src.config import SYSTEM_BASE_PATH, get_config, get_db_config
 from src.utils.db import upload_via_bcp
 from src.utils.db_ops import (
+    get_connection,
     truncate_table,
     execute_proc,
     log_audit_source_import,
     get_next_audit_import_id,
-    get_source_import_sk,
-    get_connection
+    get_source_import_sk
 )
 from src.utils.ddl_generator import generate_ods_table_ddl, generate_merge_proc_ddl, generate_dw_table_ddl, apply_ddl_from_run
 
@@ -114,26 +114,13 @@ def process_etl_config():
         truncate_table('ETL.Source_Imports')
         truncate_table('ETL.Source_File_Mapping')
 
-        upload_via_bcp(
-            file_path=imports_path,
-            table='ETL.Source_Imports',
-            db_config=db_cfg,
-            format_file=str(format_imports),
-            first_row=1
-        )
-
-        upload_via_bcp(
-            file_path=mapping_path,
-            table='ETL.Source_File_Mapping',
-            db_config=db_cfg,
-            format_file=str(format_mapping),
-            first_row=1
-        )
+        upload_via_bcp(imports_path, 'ETL.Source_Imports', db_cfg, str(format_imports), 1)
+        upload_via_bcp(mapping_path, 'ETL.Source_File_Mapping', db_cfg, str(format_mapping), 1)
 
         execute_proc('ETL.SP_Merge_Dim_Source_Imports')
         execute_proc('ETL.SP_Merge_Dim_Source_Imports_Mapping')
 
-        # Check for changes and generate DDL only for active data sources
+        # Generate DDL only for active data sources if mapping changed
         active_data_sources = df_imports[(df_imports['Is_Active'] == '1') & (~df_imports['Source_Name'].isin(['Source_Imports', 'Source_File_Mapping']))]['Source_Name'].unique()
 
         generated_dir = SYSTEM_BASE_PATH() / get_config("system", "ddl_generated_subfolder", "DW_DDL/generated")
@@ -222,5 +209,5 @@ def process_etl_config():
 
         raise
 
-if __name__ == "__main__":
+if __name__ == "__module__":
     process_etl_config()

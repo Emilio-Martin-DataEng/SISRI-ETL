@@ -1,19 +1,11 @@
 # src/utils/ddl_generator.py
-"""
-Generates SQL for tables and merge procs.
-Automatically chooses SCD Type 1 or Type 2 based on Is_Type2_Attribute in mapping.
-Always includes soft-delete for Dims.
-"""
 from datetime import datetime
 from pathlib import Path
 
 from src.config import BASE_PATH
-from src.utils.db_ops import execute_proc, generate_bcp_format_file
+from src.utils.db_ops import execute_proc
 
 def generate_ods_table_ddl(source_name: str, columns: list[dict]) -> str:
-    """Generate SQL for ODS table.
-    Adds SCD2 columns if any Is_Type2_Attribute = TRUE.
-    """
     is_scd2 = any(c.get('Is_Type2_Attribute', False) for c in columns)
     
     pk_cols = [c['Target_Column'] for c in columns if c.get('Is_PK', False)]
@@ -40,7 +32,6 @@ CREATE TABLE [ODS].[{0}] (
     return ddl
 
 def generate_dw_table_ddl(schema: str, table_name: str, columns: list[dict], timestamp: str) -> str:
-    """Generate SQL for DW table with backup rename and insert from backup."""
     column_defs = []
     for col in columns:
         nullability = "NOT NULL" if col.get('Is_Required', False) else "NULL"
@@ -74,17 +65,16 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, columns: list[
     if not template_path.exists():
         raise FileNotFoundError(f"Template missing: {template_path}")
     
-    # Force UTF-8 to avoid charmap decode errors on Windows
     template = template_path.read_text(encoding="utf-8")
 
     key_column = next((c['Target_Column'] for c in columns if c.get('Is_PK', False)), 'Source_Name')
     
     type1_cols = [c for c in columns if not c.get('Is_Type2_Attribute', False) and not c.get('Is_PK', False)]
     update_columns = ', '.join([f"d.[{c['Target_Column']}] = o.[{c['Target_Column']}]" for c in type1_cols])
-    type1_where = ' OR '.join([f"COALESCE(d.[{c['Target_Column']}], '') <> COALESCE(o.[{c['Target_Column']}], '')" for c in type1_cols]) or "1=0"
+    type1_where_changes = ' OR '.join([f"COALESCE(d.[{c['Target_Column']}], '') <> COALESCE(o.[{c['Target_Column']}], '')" for c in type1_cols]) or "1=0"
     
     type2_cols = [c for c in columns if c.get('Is_Type2_Attribute', False)]
-    type2_where = ' OR '.join([f"COALESCE(d.[{c['Target_Column']}], '') <> COALESCE(o.[{c['Target_Column']}], '')" for c in type2_cols]) or "1=0"
+    type2_where_changes = ' OR '.join([f"COALESCE(d.[{c['Target_Column']}], '') <> COALESCE(o.[{c['Target_Column']}], '')" for c in type2_cols]) or "1=0"
     
     insert_columns = ', '.join([f"[{c['Target_Column']}]" for c in columns])
     select_columns = ', '.join([f"o.[{c['Target_Column']}]" for c in columns])
@@ -96,8 +86,8 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, columns: list[
         generated_time=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         update_columns=update_columns,
         type1_update_columns=update_columns,
-        type1_where_changes=type1_where,
-        type2_where_changes=type2_where,
+        type1_where_changes=type1_where_changes,
+        type2_where_changes=type2_where_changes,
         insert_columns=insert_columns,
         select_columns=select_columns,
         join_condition=join_condition,
@@ -108,7 +98,7 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, columns: list[
 def apply_ddl_from_run(base_path: Path):
     run_dir = base_path / "config" / "DW_DDL" / "run"
     for sql_file in run_dir.glob("*.sql"):
-        sql = sql_file.read_text()
+        sql = sql_file.read_text(encoding="utf-8")
         execute_proc("sp_executesql", f"@stmt = N'{sql.replace("'", "''")}'")
         print(f"Applied DDL from {sql_file}")
         sql_file.unlink()

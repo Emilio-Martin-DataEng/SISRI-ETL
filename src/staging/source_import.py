@@ -6,7 +6,7 @@ from datetime import datetime
 import csv
 import shutil
 
-from src.config import BASE_PATH, get_db_config, get_config, SYSTEM_BASE_PATH
+from src.config import BASE_PATH, DATA_BASE_PATH, get_db_config, get_config, SYSTEM_BASE_PATH
 from src.utils.db import upload_via_bcp
 from src.utils.db_ops import (
     get_next_audit_import_id,
@@ -84,7 +84,7 @@ def process_source(source_name: str):
         cursor.close()
         conn.close()
 
-        folder = BASE_PATH() / rel_path
+        folder = DATA_BASE_PATH() / rel_path
         all_files = sorted(folder.glob(pattern))
 
         if not all_files:
@@ -101,7 +101,7 @@ def process_source(source_name: str):
             )
             return 0
 
-        # NEW: Auto-generate BCP format file for this data source (only if missing)
+        # NEW: Generate format file for this source if missing
         format_dir = SYSTEM_BASE_PATH() / get_config("system", "config_folder", "config") / get_config("system", "format_subfolder", "format")
         fmt_path = format_dir / f"{source_name.lower()}.fmt"
 
