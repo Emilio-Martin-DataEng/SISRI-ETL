@@ -16,7 +16,7 @@ from src.config import get_db_config
 
 def get_connection():
     db_cfg = get_db_config()
-    print("DEBUG: db_cfg =", db_cfg)  # <-- add this line
+
     if db_cfg is None:
         raise ValueError("get_db_config returned None")
     

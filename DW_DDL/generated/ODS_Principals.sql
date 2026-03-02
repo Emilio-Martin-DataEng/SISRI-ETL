@@ -7,6 +7,9 @@ CREATE TABLE [ODS].[Principals] (
     [Principal_City    ] VARCHAR(500) NOT NULL,
     [Principal_Province] VARCHAR(500) NOT NULL,
     [Principal_Country ] VARCHAR(500) NOT NULL,
+    [Row_Is_Current] BIT NOT NULL DEFAULT 1,
+    [Row_Effective_Datetime] DATETIME NOT NULL DEFAULT GETDATE(),
+    [Row_Expiry_Datetime] DATETIME NULL,
     [Inserted_Datetime] DATETIME2 NOT NULL DEFAULT GETDATE()
 , CONSTRAINT PK_Principals PRIMARY KEY ([Principal_Code], [Principal_Name], [Principal_Trading_As_Name], [Principal_Address ], [Principal_City    ], [Principal_Province], [Principal_Country ])
 );

@@ -1,6 +1,6 @@
 IF OBJECT_ID('DW.Dim_Principals', 'U') IS NOT NULL
 BEGIN
-    EXEC sp_rename 'DW.Dim_Principals', 'Dim_Principals_backup_20260302_144223';
+    EXEC sp_rename 'DW.Dim_Principals', 'Dim_Principals_backup_20260302_175923';
     -- Create new table
     CREATE TABLE [DW].[Dim_Principals] (
     [Principal_Code] VARCHAR(500) NOT NULL,
@@ -13,7 +13,7 @@ BEGIN
     [Inserted_Datetime] DATETIME2 NOT NULL DEFAULT GETDATE()
     );
     -- Insert backed up data
-    INSERT INTO [DW].[Dim_Principals] SELECT * FROM [DW].[Dim_Principals_backup_20260302_144223];
+    INSERT INTO [DW].[Dim_Principals] SELECT * FROM [DW].[Dim_Principals_backup_20260302_175923];
 END
 ELSE
 BEGIN

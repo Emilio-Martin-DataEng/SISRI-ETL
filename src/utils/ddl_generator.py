@@ -6,9 +6,9 @@ from src.config import BASE_PATH
 from src.utils.db_ops import execute_proc
 
 def generate_ods_table_ddl(source_name: str, columns: list[dict]) -> str:
-    is_scd2 = any(c.get('Is_Type2_Attribute', False) for c in columns)
+    is_scd2 = any(c.get('Is_Type2_Attribute', True) for c in columns)
     
-    pk_cols = [c['Target_Column'] for c in columns if c.get('Is_PK', False)]
+    pk_cols = [c['Target_Column'] for c in columns if c.get('Is_PK', True)]
     pk_clause = f", CONSTRAINT PK_{source_name} PRIMARY KEY ({', '.join([f'[{col}]' for col in pk_cols])})" if pk_cols else ""
     
     column_defs = []
@@ -58,6 +58,8 @@ END""".format(schema, table_name, timestamp, ',\n'.join(column_defs))
     return ddl
 
 def generate_merge_proc_ddl(source_name: str, staging_table: str, columns: list[dict]) -> str:
+
+
     is_scd2 = any(c.get('Is_Type2_Attribute', False) for c in columns)
     pattern = 'scd_type2' if is_scd2 else 'scd_type1'
     
@@ -66,6 +68,8 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, columns: list[
         raise FileNotFoundError(f"Template missing: {template_path}")
     
     template = template_path.read_text(encoding="utf-8")
+
+    print (template_path)
 
     key_column = next((c['Target_Column'] for c in columns if c.get('Is_PK', False)), 'Source_Name')
     
@@ -80,6 +84,7 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, columns: list[
     select_columns = ', '.join([f"o.[{c['Target_Column']}]" for c in columns])
     join_condition = f"d.[{key_column}] = o.[{key_column}]"
 
+ 
     ddl = template.format(
         dim_name=source_name,
         staging_table=staging_table,

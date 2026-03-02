@@ -157,7 +157,7 @@ def process_etl_config():
                 # Generate DW table DDL with backup + insert
                 dw_ddl = generate_dw_table_ddl('DW', f"Dim_{source}", source_mapping, timestamp)
                 (generated_dir / f"DW_Dim_{source}.sql").write_text(dw_ddl)
-
+                print(f"[DDL] 3")
                 # Generate merge proc DDL
                 merge_ddl = generate_merge_proc_ddl(source, f"ODS.{source}", source_mapping)
                 (generated_dir / f"SP_Merge_Dim_{source}.sql").write_text(merge_ddl)
