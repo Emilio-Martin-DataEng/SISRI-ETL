@@ -4,6 +4,7 @@ from datetime import datetime
 from src.staging.etl_config import process_etl_config
 from src.staging.source_import import process_source
 from src.utils.db_ops import log_audit_source_import, get_next_audit_import_id, execute_proc, get_connection
+from src.utils.ddl_generator import apply_ddl_from_run
 
 def run_etl(sources=None, force_ddl=False):
     start_time = datetime.now()
@@ -106,3 +107,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     run_etl(args.sources, args.force_ddl)
+    # After all sources
+    apply_ddl_from_run()

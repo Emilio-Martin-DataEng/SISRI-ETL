@@ -15,7 +15,7 @@ from src.utils.db_ops import (
     get_next_audit_import_id,
     get_source_import_sk
 )
-from src.utils.ddl_generator import generate_ods_table_ddl, generate_dw_table_ddl, generate_merge_proc_ddl, apply_ddl_from_run
+from src.utils.ddl_generator import generate_ods_table_ddl, generate_merge_proc_ddl, generate_dw_table_ddl, apply_ddl_from_run
 
 def process_etl_config():
     start_time = datetime.now()
@@ -109,6 +109,10 @@ def process_etl_config():
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
         for source in active_data_sources:
+            # Get force flag
+            cursor.execute("SELECT Force_DDL_Generation FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source)
+            force_ddl = cursor.fetchone()[0] or 0
+
             cursor.execute("EXEC [ETL].[SP_Get_Source_Imports_Last_Checked] ?", source)
             last_checked_row = cursor.fetchone()
             last_checked = last_checked_row[0] if last_checked_row else None
@@ -120,8 +124,8 @@ def process_etl_config():
             """, source)
             max_mapping_change = cursor.fetchone()[0]
 
-            if last_checked is None or (max_mapping_change and max_mapping_change > last_checked):
-                print(f"[DDL] Mapping changed for {source} - generating DDL")
+            if force_ddl or (last_checked is None or max_mapping_change > last_checked):
+                print(f"[DDL] Mapping changed or forced for {source} - generating DDL")
                 
                 source_mapping = df_mapping[df_mapping['Source_Name'] == source].to_dict('records')
 
