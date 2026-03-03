@@ -1,13 +1,3 @@
-# src/utils/ddl_generator.py
-"""
-Generates DDL for ODS and DW tables + merge procs.
-- Trims field names
-- Implements Is_PK as UNIQUE on natural keys + surrogate _SK PK in DIM
-- Implements Is_Required for nullable
-- SCD2 columns only in DIM (top of table)
-- Backup INSERT uses explicit column list (no *)
-- Only for real data sources
-"""
 from datetime import datetime
 from pathlib import Path
 
@@ -15,16 +5,15 @@ from src.config import BASE_PATH
 from src.utils.db_ops import execute_proc
 
 def generate_ods_table_ddl(source_name: str, columns: list[dict]) -> str:
-    """ODS table - clean, no SCD2 columns."""
-    pk_cols = [c['Target_Column'].strip() for c in columns if c.get('Is_PK', False)]
-    pk_clause = f", CONSTRAINT PK_{source_name} PRIMARY KEY ({', '.join([f'[{col}]' for col in pk_cols])})" if pk_cols else ""
-    
     column_defs = []
     for col in columns:
         col_name = col['Target_Column'].strip()
         nullability = "NOT NULL" if col.get('Is_Required', False) else "NULL"
         column_defs.append(f"    [{col_name}] {col['Data_Type']} {nullability}")
-    
+
+    pk_cols = [c['Target_Column'].strip() for c in columns if c.get('Is_PK', False)]
+    pk_clause = f", CONSTRAINT PK_{source_name} PRIMARY KEY ({', '.join([f'[{col}]' for col in pk_cols])})" if pk_cols else ""
+
     ddl = f"""IF OBJECT_ID('ODS.{source_name}', 'U') IS NULL
 CREATE TABLE [ODS].[{source_name}] (
 {',\n'.join(column_defs)},
@@ -34,30 +23,37 @@ CREATE TABLE [ODS].[{source_name}] (
     return ddl
 
 def generate_dw_table_ddl(schema: str, table_name: str, columns: list[dict], timestamp: str) -> str:
-    """DW table with backup rename + explicit INSERT (no *)."""
-    # Surrogate SK PK
     sk_col = f"{table_name.replace('Dim_', '')}_SK"
     
     column_defs = [f"    [{sk_col}] INT IDENTITY(1,1) NOT NULL CONSTRAINT [PK_{table_name}] PRIMARY KEY"]
     
+    # SCD2 metadata at beginning if SCD2
+    has_scd2 = any(c.get('Is_Type2_Attribute', False) for c in columns)
+    if has_scd2:
+        column_defs.extend([
+            "    [Row_Is_Current] BIT NOT NULL DEFAULT 1",
+            "    [Row_Effective_Datetime] DATETIME NOT NULL DEFAULT GETDATE()",
+            "    [Row_Expiry_Datetime] DATETIME NULL"
+        ])
+    
+    column_defs.append("    [Inserted_Datetime] DATETIME2 NOT NULL DEFAULT GETDATE()")
+    column_defs.append("    [Updated_Datetime] DATETIME NULL")
+    column_defs.append("    [Is_Deleted] BIT NOT NULL DEFAULT 0")
+    
+    # Mapping columns
     for col in columns:
         col_name = col['Target_Column'].strip()
         nullability = "NOT NULL" if col.get('Is_Required', False) else "NULL"
         column_defs.append(f"    [{col_name}] {col['Data_Type']} {nullability}")
     
-    # SCD2 columns at top of DIM (only in DIM)
-    if any(c.get('Is_Type2_Attribute', False) for c in columns):
-        column_defs = [
-            "    [Row_Is_Current] BIT NOT NULL DEFAULT 1",
-            "    [Row_Effective_Datetime] DATETIME NOT NULL DEFAULT GETDATE()",
-            "    [Row_Expiry_Datetime] DATETIME NULL",
-        ] + column_defs[1:]  # insert after SK
-    
-    column_defs.append("    [Inserted_Datetime] DATETIME2 NOT NULL DEFAULT GETDATE()")
-    column_defs.append("    [Updated_Datetime] DATETIME NULL")
-    
-    # Explicit column list for backup INSERT (only common columns)
-    common_cols = [c['Target_Column'].strip() for c in columns] + ["Inserted_Datetime", "Updated_Datetime"]
+    # Nonclustered unique index on natural keys
+    nk_cols = [c['Target_Column'].strip() for c in columns if c.get('Is_PK', False)]
+    nk_clause = f"CREATE UNIQUE NONCLUSTERED INDEX [UIX_NK_{table_name}] ON [{schema}].[{table_name}] ({', '.join([f'[{col}]' for col in nk_cols])});" if nk_cols else ""
+
+    # Common columns for backup INSERT
+    common_cols = [c['Target_Column'].strip() for c in columns] + ["Inserted_Datetime", "Updated_Datetime", "Is_Deleted"]
+    if has_scd2:
+        common_cols += ["Row_Is_Current", "Row_Effective_Datetime", "Row_Expiry_Datetime"]
     insert_list = ', '.join([f'[{col}]' for col in common_cols])
     
     ddl = f"""IF OBJECT_ID('{schema}.{table_name}', 'U') IS NOT NULL
@@ -74,13 +70,12 @@ BEGIN
     CREATE TABLE [{schema}].[{table_name}] (
 {',\n'.join(column_defs)}
     );
-END"""
+END
+
+{nk_clause}"""
     return ddl
 
-
 def generate_merge_proc_ddl(source_name: str, staging_table: str, columns: list[dict]) -> str:
-
-
     is_scd2 = any(c.get('Is_Type2_Attribute', False) for c in columns)
     pattern = 'scd_type2' if is_scd2 else 'scd_type1'
     
@@ -89,8 +84,6 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, columns: list[
         raise FileNotFoundError(f"Template missing: {template_path}")
     
     template = template_path.read_text(encoding="utf-8")
-
-    print (template_path)
 
     key_column = next((c['Target_Column'] for c in columns if c.get('Is_PK', False)), 'Source_Name')
     
@@ -105,7 +98,6 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, columns: list[
     select_columns = ', '.join([f"o.[{c['Target_Column']}]" for c in columns])
     join_condition = f"d.[{key_column}] = o.[{key_column}]"
 
- 
     ddl = template.format(
         dim_name=source_name,
         staging_table=staging_table,

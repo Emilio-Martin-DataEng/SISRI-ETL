@@ -1,168 +1,108 @@
-# src/etl_orchestrator.py
-"""
-High-level ETL orchestrator.
-Runs config load → data sources → audit/reporting.
-"""
-
+import argparse
 from datetime import datetime
-import logging
 
-from src.config import SYSTEM_BASE_PATH
 from src.staging.etl_config import process_etl_config
-from src.staging.source_import import process_source, CONFIG_SOURCES
-from src.utils.db_ops import get_connection, log_audit_source_import, get_next_audit_import_id
+from src.staging.source_import import process_source
+from src.utils.db_ops import log_audit_source_import, get_next_audit_import_id, execute_proc, get_connection
 
-# Logging to file and console
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    filename=str(SYSTEM_BASE_PATH() / "logs" / "etl_orchestrator.log"),
-    filemode='a'
-)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-logging.getLogger('').addHandler(console)
-
-def run_full_etl(specific_sources: list[str] | None = None):
-    """Runs the full ETL pipeline.
-    Refreshes config, processes sources, shows audit summary.
-    """
-    global_start = datetime.now()
-    logging.info(f"Full ETL run started at {global_start}")
-
+def run_etl(sources=None, force_ddl=False):
+    start_time = datetime.now()
     global_audit_id = get_next_audit_import_id()
     log_audit_source_import(
-        audit_id=global_audit_id,
+        global_audit_id,
         source_import_sk=0,
-        start_time=global_start,
-        total_row_count=0,
-        total_file_count=0,
+        start_time=start_time,
         process_status='Running',
-        pattern='Batch Run'
+        pattern='Full ETL Run'
     )
-    logging.info(f"Global audit entry: {global_audit_id}")
+    print(f"Full ETL run started at {start_time}")
+
+    process_etl_config()
+
+    if sources is None:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT Source_Name FROM [ETL].[Dim_Source_Imports] WHERE Is_Active = 1 AND Is_Deleted = 0")
+        sources = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+
+    print(f"Processing {len(sources)} sources (force DDL: {force_ddl}).")
 
     total_rows = 0
-    processed_sources = []
-    failed_sources = []
-
-    try:
-        # Step 1: Refresh config (includes DDL generation if mapping changed)
-        logging.info("Refreshing ETL config...")
-        process_etl_config()
-
-        # Step 2: Process active data sources
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT Source_Name, Source_Import_SK
-            FROM [ETL].[Dim_Source_Imports]
-            WHERE Is_Active = 1 
-              AND Is_Deleted = 0 
-              AND Source_Name NOT IN ('Source_Imports', 'Source_File_Mapping')
-            ORDER BY Processing_Order ASC
-        """)
-        sources = cursor.fetchall()
-        cursor.close()
-        conn.close()
-
-        if not sources:
-            logging.warning("No active data sources found.")
-            log_audit_source_import(
-                audit_id=global_audit_id,
-                source_import_sk=0,
-                start_time=global_start,
-                end_time=datetime.now(),
-                total_row_count=0,
-                total_file_count=0,
-                exception_detail="No sources",
-                process_status='Skipped'
-            )
-            return
-
-        logging.info(f"Processing {len(sources)} sources.")
-
-        for source_name, source_sk in sources:
-            if specific_sources and source_name not in specific_sources:
+    for source_name in sources:
+        try:
+            # Skip if already processed today
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT Last_Successful_Load_Datetime FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source_name)
+            last_success = cursor.fetchone()
+            if last_success and last_success[0] and last_success[0].date() == datetime.now().date():
+                print(f"[SKIP] {source_name} already processed today")
                 continue
 
-            logging.info(f"Processing {source_name} (SK={source_sk})")
-            source_start = datetime.now()
+            rows = process_source(source_name, force_ddl=force_ddl)
+            total_rows += rows
 
-            retries = 0
-            success = False
-            source_rows = 0
-            while retries < 3 and not success:
-                try:
-                    source_rows = process_source(source_name)
-                    success = True
-                    processed_sources.append(source_name)
-                    total_rows += source_rows
-                except Exception as e:
-                    retries += 1
-                    logging.error(f"Retry {retries}/3 for {source_name}: {e}")
-                    if retries >= 3:
-                        failed_sources.append(source_name)
-                        logging.error(f"Failed {source_name} after 3 retries: {e}")
+            # Phase 2: Run merge
+            cursor.execute("SELECT Merge_Proc_Name FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source_name)
+            merge_proc_row = cursor.fetchone()
+            merge_proc_name = merge_proc_row[0] if merge_proc_row and merge_proc_row[0] else f"ETL.SP_Merge_Dim_{source_name}"
+            execute_proc(merge_proc_name)
+            print(f"  Merged {source_name} using {merge_proc_name}")
 
-            duration = (datetime.now() - source_start).total_seconds()
-            logging.info(f"{source_name} done in {duration:.2f}s (rows: {source_rows})")
+            # Update checkpoint
+            cursor.execute("UPDATE [ETL].[Dim_Source_Imports] SET Last_Successful_Load_Datetime = GETDATE() WHERE Source_Name = ?", source_name)
+            conn.commit()
+            cursor.close()
+            conn.close()
 
-        # Finalize global audit
-        global_end = datetime.now()
-        status = 'Success' if not failed_sources else 'Partial Success'
-        detail = f"Failed: {failed_sources}" if failed_sources else None
-
-        log_audit_source_import(
-            audit_id=global_audit_id,
-            source_import_sk=0,
-            start_time=global_start,
-            end_time=global_end,
-            total_row_count=total_rows,
-            total_file_count=0,
-            exception_detail=detail,
-            pattern='Batch Run',
-            process_status=status
-        )
-
-        logging.info(f"Full ETL run complete at {global_end}")
-        logging.info(f"Duration: {(global_end - global_start).total_seconds():.2f}s")
-        logging.info(f"Total rows processed: {total_rows}")
-        logging.info(f"Processed sources: {processed_sources}")
-        if failed_sources:
-            logging.warning(f"Failed sources: {failed_sources}")
-
-        # Optional: Print recent audit summary
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT TOP 5 
-                Audit_Source_Import_SK, Source_Import_SK, Start_Time, End_Time, 
-                Total_Row_Count, Total_File_Count, Process_Status, Exception_Detail
-            FROM [ETL].[Fact_Audit_Source_Imports]
-            ORDER BY Start_Time DESC
-        """)
-        rows = cursor.fetchall()
-        print("\nRecent ETL Audit Summary:")
-        for row in rows:
-            print(f"  Run {row[0]} | Source {row[1]} | {row[2]} → {row[3]} | Rows: {row[4]} | Files: {row[5]} | Status: {row[6]} | Detail: {row[7] or 'None'}")
-        cursor.close()
-        conn.close()
-
-    except Exception as e:
-        logging.error(f"Orchestrator failure: {e}")
-        if global_audit_id:
+        except Exception as e:
+            if 'conn' in locals():
+                conn.rollback()
+                cursor.close()
+                conn.close()
+            error_summary = str(e).split('\n')[-1] if str(e) else "Unknown error"
             log_audit_source_import(
-                audit_id=global_audit_id,
+                global_audit_id,
                 source_import_sk=0,
-                start_time=global_start,
+                start_time=start_time,
                 end_time=datetime.now(),
-                total_row_count=total_rows,
-                total_file_count=0,
-                exception_detail=str(e),
-                process_status='Failed'
+                process_status='Failed',
+                exception_detail=f"{source_name} failed: {error_summary}"
             )
-        raise
+            print(f"ERROR: {source_name} failed - {error_summary}")
+            print("Stopping execution. Restart from failed source.")
+            break
+
+    end_time = datetime.now()
+    log_audit_source_import(
+        global_audit_id,
+        source_import_sk=0,
+        start_time=start_time,
+        end_time=end_time,
+        total_row_count=total_rows,
+        total_file_count=len(sources),
+        process_status='Success',
+        pattern='Full ETL Run'
+    )
+    print(f"Full ETL run complete at {end_time}")
+    print(f"Duration: {(end_time - start_time).total_seconds():.2f}s")
+    print(f"Total rows processed: {total_rows}")
+    print(f"Processed sources: {sources}")
 
 if __name__ == "__main__":
-    run_full_etl()
+    parser = argparse.ArgumentParser(
+        description="SISRI ETL Orchestrator\n\n"
+                    "Runs full ETL: config refresh → source loads (ODS) → dimension merges (DW).\n"
+                    "Options:\n"
+                    "  --sources Principals Brands     Run only these sources\n"
+                    "  --force-ddl                     Force DDL regeneration for all sources\n"
+                    "  --help                          Show this help",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument("--sources", nargs="+", default=None, help="Specific sources to process")
+    parser.add_argument("--force-ddl", action="store_true", help="Force DDL generation")
+    args = parser.parse_args()
+
+    run_etl(args.sources, args.force_ddl)
