@@ -1,26 +1,28 @@
-Principals	Principal Code	Principal_Code	VARCHAR(500)	Primary key	0	1	1	2026-03-02 22:29:31.000
-Principals	Principal Name	Principal_Name	VARCHAR(500)	Display name	0	0	1	2026-03-02 22:29:31.000
-Principals	Trading as Name	Principal_Trading_As_Name	VARCHAR(500)	Trading name	0	0	0	2026-03-02 22:29:31.000
-Principals	Principal Address	Principal_Address 	VARCHAR(500)	Address 	0	0	0	2026-03-02 22:29:31.000
-Principals	Principal City	Principal_City    	VARCHAR(500)	City    	0	0	0	2026-03-02 22:29:31.000
-Principals	Principal Province	Principal_Province	VARCHAR(500)	Province	0	0	0	2026-03-02 22:29:31.000
-Principals	Principal Country	Principal_Country 	VARCHAR(500)	Country 	0	0	0	2026-03-02 22:29:31.000
-Source_Imports	Source_Name	Source_Name	VARCHAR(500)	Primary key	0	1	1	2026-03-02 22:29:31.000
-Source_Imports	Rel_Path	Rel_Path	VARCHAR(500)	Relative path from root	1	0	1	2026-03-02 22:29:31.000
-Source_Imports	Pattern	Pattern	VARCHAR(500)	File name search pattern	1	0	1	2026-03-02 22:29:31.000
-Source_Imports	Sheet_Name	Sheet_Name	VARCHAR(500)	Spreadsheet name	1	0	0	2026-03-02 22:29:31.000
-Source_Imports	Staging_Table	Staging_Table	VARCHAR(500)	Two part staging table name	1	0	1	2026-03-02 22:29:31.000
-Source_Imports	Processing_Order	Processing_Order	VARCHAR(500)	Order the source files should be processed in	1	0	0	2026-03-02 22:29:31.000
-Source_Imports	Is_Active	Is_Active	bit	Active Indicator	0	0	1	2026-03-02 22:29:31.000
-Source_Imports	Description	Description	VARCHAR(500)	Description of file contents	0	0	0	2026-03-02 22:29:31.000
-Source_File_Mapping	Source_Name	Source_Name	VARCHAR(500)	Source_Imports source name	0	1	1	2026-03-02 22:29:31.000
-Source_File_Mapping	Source_Column	Source_Column	VARCHAR(500)	Spreadsheet column name	0	1	1	2026-03-02 22:29:31.000
-Source_File_Mapping	Target_Column	Target_Column	VARCHAR(500)	Database table name	0	0	1	2026-03-02 22:29:31.000
-Source_File_Mapping	Data_Type	Data_Type	VARCHAR(500)	Database datatype	0	0	1	2026-03-02 22:29:31.000
-Source_File_Mapping	Description	Description	VARCHAR(500)	Column Description	0	0	0	2026-03-02 22:29:31.000
-Source_File_Mapping	Is_Type2_Attribute 	Is_Type2_Attribute 	bit	SCD Type 2 Field	0	0	1	2026-03-02 22:29:31.000
-Source_File_Mapping	Is_PK	Is_PK	bit	Is the column part of the PK	0	0	1	2026-03-02 22:29:31.000
-Source_File_Mapping	Is_Required	Is_Required	bit	Is the column nullable	0	0	1	2026-03-02 22:29:31.000
-Brands	Principal Code	Principal_Code	VARCHAR(500)	Primary key	0	1	1	2026-03-02 22:29:31.000
-Brands	Brand code	Brand_Code	VARCHAR(500)	Primary key	0	1	1	2026-03-02 22:29:31.000
-Brands	Brand Name	Brand_Name	VARCHAR(500)	Name	0	0	1	2026-03-02 22:29:31.000
+Principals	Principal Code	Principal_Code	VARCHAR(500)	Primary key	0	1	1	2026-03-03 11:26:17.000
+Principals	Principal Name	Principal_Name	VARCHAR(500)	Display name	0	0	1	2026-03-03 11:26:17.000
+Principals	Trading as Name	Principal_Trading_As_Name	VARCHAR(500)	Trading name	0	0	0	2026-03-03 11:26:17.000
+Principals	Principal Address	Principal_Address 	VARCHAR(500)	Address 	0	0	0	2026-03-03 11:26:17.000
+Principals	Principal City	Principal_City    	VARCHAR(500)	City    	0	0	0	2026-03-03 11:26:17.000
+Principals	Principal Province	Principal_Province	VARCHAR(500)	Province	0	0	0	2026-03-03 11:26:17.000
+Principals	Principal Country	Principal_Country 	VARCHAR(500)	Country 	0	0	0	2026-03-03 11:26:17.000
+Source_Imports	Source_Name	Source_Name	VARCHAR(500)	Primary key	0	1	1	2026-03-03 11:26:17.000
+Source_Imports	Rel_Path	Rel_Path	VARCHAR(500)	Relative path from root	1	0	1	2026-03-03 11:26:17.000
+Source_Imports	Pattern	Pattern	VARCHAR(500)	File name search pattern	1	0	1	2026-03-03 11:26:17.000
+Source_Imports	Sheet_Name	Sheet_Name	VARCHAR(500)	Spreadsheet name	1	0	0	2026-03-03 11:26:17.000
+Source_Imports	Staging_Table	Staging_Table	VARCHAR(500)	Two part staging table name	1	0	1	2026-03-03 11:26:17.000
+Source_Imports	Processing_Order	Processing_Order	VARCHAR(500)	Order the source files should be processed in	1	0	0	2026-03-03 11:26:17.000
+Source_Imports	Is_Active	Is_Active	bit	Active Indicator	0	0	1	2026-03-03 11:26:17.000
+Source_Imports	Description	Description	VARCHAR(500)	Description of file contents	0	0	0	2026-03-03 11:26:17.000
+Source_Imports	DW_Table_Name	DW_Table_Name	VARCHAR(500)	Target Data Warehouse Dimension or fact name	0	0	1	2026-03-03 11:26:17.000
+Source_Imports	Merge_Proc_Name	Merge_Proc_Name	VARCHAR(500)	ETL Phase 2 Stored Procedure	1	0	1	2026-03-03 11:26:17.000
+Source_File_Mapping	Source_Name	Source_Name	VARCHAR(500)	Source_Imports source name	0	1	1	2026-03-03 11:26:17.000
+Source_File_Mapping	Source_Column	Source_Column	VARCHAR(500)	Spreadsheet column name	0	1	1	2026-03-03 11:26:17.000
+Source_File_Mapping	Target_Column	Target_Column	VARCHAR(500)	Database table name	0	0	1	2026-03-03 11:26:17.000
+Source_File_Mapping	Data_Type	Data_Type	VARCHAR(500)	Database datatype	0	0	1	2026-03-03 11:26:17.000
+Source_File_Mapping	Description	Description	VARCHAR(500)	Column Description	0	0	0	2026-03-03 11:26:17.000
+Source_File_Mapping	Is_Type2_Attribute 	Is_Type2_Attribute 	bit	SCD Type 2 Field	0	0	1	2026-03-03 11:26:17.000
+Source_File_Mapping	Is_PK	Is_PK	bit	Is the column part of the PK	0	0	1	2026-03-03 11:26:17.000
+Source_File_Mapping	Is_Required	Is_Required	bit	Is the column nullable	0	0	1	2026-03-03 11:26:17.000
+Brands	Principal Code	Principal_Code	VARCHAR(500)	Primary key	0	1	1	2026-03-03 11:26:17.000
+Brands	Brand code	Brand_Code	VARCHAR(500)	Primary key	0	1	1	2026-03-03 11:26:17.000
+Brands	Brand Name	Brand_Name	VARCHAR(500)	Name	0	0	1	2026-03-03 11:26:17.000

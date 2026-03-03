@@ -11,3 +11,6 @@ dependencies = []                 # optional: list runtime deps here if you want
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]                # tells it to package src/ as the namespace
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
