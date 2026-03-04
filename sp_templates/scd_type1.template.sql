@@ -15,29 +15,29 @@ BEGIN
         UPDATE d SET
             {update_columns},
             d.Updated_Datetime = GETDATE()
-        FROM [ETL].[Dim_{dim_name}] d
-        INNER JOIN [ETL].[{staging_table}] o ON {join_condition}
+        FROM {dw_table} d
+        INNER JOIN {ods_table} o ON {join_condition}
         WHERE ({type1_where_changes});
         SET @UpdatedCount = @@ROWCOUNT;
 
         -- INSERT new dimension rows
-        INSERT INTO [ETL].[Dim_{dim_name}] ({insert_columns}, [Inserted_Datetime], [Updated_Datetime], [Row_Change_Reason])
+        INSERT INTO {dw_table} ({insert_columns}, [Inserted_Datetime], [Updated_Datetime], [Row_Change_Reason])
         SELECT {select_columns}, GETDATE(), NULL, 'NEW'
-        FROM [ETL].[{staging_table}] o
-        WHERE NOT EXISTS (SELECT 1 FROM [ETL].[Dim_{dim_name}] d WHERE {join_condition});
+        FROM {ods_table} o
+        WHERE NOT EXISTS (SELECT 1 FROM {dw_table} d WHERE {join_condition});
         SET @InsertedCount = @@ROWCOUNT;
 
         -- SOFT-DELETE: mark rows no longer in staging
         UPDATE d SET d.Is_Deleted = 1, d.Updated_Datetime = GETDATE(), d.Row_Change_Reason = 'Soft Deleted'
-        FROM [ETL].[Dim_{dim_name}] d
-        LEFT JOIN [ETL].[{staging_table}] o ON {join_condition}
+        FROM {dw_table} d
+        LEFT JOIN {ods_table} o ON {join_condition}
         WHERE o.{key_column} IS NULL AND d.Is_Deleted = 0;
         SET @DeletedCount = @@ROWCOUNT;
 
         -- RE-ACTIVATE: rows that reappear in staging
         UPDATE d SET d.Is_Deleted = 0, d.Updated_Datetime = GETDATE(), d.Row_Change_Reason = 'Reactivated'
-        FROM [ETL].[Dim_{dim_name}] d
-        INNER JOIN [ETL].[{staging_table}] o ON {join_condition}
+        FROM {dw_table} d
+        INNER JOIN {ods_table} o ON {join_condition}
         WHERE d.Is_Deleted = 1;
         SET @ReactivatedCount = @@ROWCOUNT;
 

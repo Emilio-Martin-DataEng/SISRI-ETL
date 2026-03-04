@@ -1,5 +1,5 @@
 -- Merge proc for Brands -> ETL.Dim_Brands (SCD Type 1)
--- Generated at 2026-03-03 16:02:11
+-- Generated at 2026-03-04 12:04:26
 CREATE OR ALTER PROCEDURE [ETL].[SP_Merge_Dim_Brands]
     @Source_Import_SK INT = NULL,
     @Audit_Source_Import_SK INT = NULL
@@ -13,31 +13,31 @@ BEGIN
 
         -- Type 1: UPDATE changed attributes
         UPDATE d SET
-            ,
+            d.[Brand_Name] = o.[Brand_Name],
             d.Updated_Datetime = GETDATE()
-        FROM [ETL].[Dim_Brands] d
-        INNER JOIN [ETL].[ODS.Brands] o ON d.[Principal_Code] = o.[Principal_Code]
-        WHERE (1=0);
+        FROM [DW].[Dim_Brands] d
+        INNER JOIN [ODS].[Brands] o ON d.[Principal_Code] = o.[Principal_Code]
+        WHERE (COALESCE(d.[Brand_Name], '') <> COALESCE(o.[Brand_Name], ''));
         SET @UpdatedCount = @@ROWCOUNT;
 
         -- INSERT new dimension rows
-        INSERT INTO [ETL].[Dim_Brands] ([Principal_Code], [Brand_Code], [Brand_Name], [Inserted_Datetime], [Updated_Datetime], [Row_Change_Reason])
+        INSERT INTO [DW].[Dim_Brands] ([Principal_Code], [Brand_Code], [Brand_Name], [Inserted_Datetime], [Updated_Datetime], [Row_Change_Reason])
         SELECT o.[Principal_Code], o.[Brand_Code], o.[Brand_Name], GETDATE(), NULL, 'NEW'
-        FROM [ETL].[ODS.Brands] o
-        WHERE NOT EXISTS (SELECT 1 FROM [ETL].[Dim_Brands] d WHERE d.[Principal_Code] = o.[Principal_Code]);
+        FROM [ODS].[Brands] o
+        WHERE NOT EXISTS (SELECT 1 FROM [DW].[Dim_Brands] d WHERE d.[Principal_Code] = o.[Principal_Code]);
         SET @InsertedCount = @@ROWCOUNT;
 
         -- SOFT-DELETE: mark rows no longer in staging
         UPDATE d SET d.Is_Deleted = 1, d.Updated_Datetime = GETDATE(), d.Row_Change_Reason = 'Soft Deleted'
-        FROM [ETL].[Dim_Brands] d
-        LEFT JOIN [ETL].[ODS.Brands] o ON d.[Principal_Code] = o.[Principal_Code]
+        FROM [DW].[Dim_Brands] d
+        LEFT JOIN [ODS].[Brands] o ON d.[Principal_Code] = o.[Principal_Code]
         WHERE o.Principal_Code IS NULL AND d.Is_Deleted = 0;
         SET @DeletedCount = @@ROWCOUNT;
 
         -- RE-ACTIVATE: rows that reappear in staging
         UPDATE d SET d.Is_Deleted = 0, d.Updated_Datetime = GETDATE(), d.Row_Change_Reason = 'Reactivated'
-        FROM [ETL].[Dim_Brands] d
-        INNER JOIN [ETL].[ODS.Brands] o ON d.[Principal_Code] = o.[Principal_Code]
+        FROM [DW].[Dim_Brands] d
+        INNER JOIN [ODS].[Brands] o ON d.[Principal_Code] = o.[Principal_Code]
         WHERE d.Is_Deleted = 1;
         SET @ReactivatedCount = @@ROWCOUNT;
 

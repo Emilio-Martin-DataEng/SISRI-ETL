@@ -68,7 +68,12 @@ def process_etl_config():
         format_dir.mkdir(exist_ok=True)
 
         df_imports = pd.read_excel(config_file, sheet_name="Source_Imports", dtype=str)
-        df_mapping = pd.read_excel(config_file, sheet_name="Source_File_Mapping", dtype=str)
+        df_mapping = pd.read_excel(config_file, sheet_name="Source_File_Mapping", dtype={
+            'Is_Type2_Attribute': 'int',
+            'Is_PK': 'int',
+            'Is_Required': 'int',
+            'Is_Deleted': 'int'
+        })
 
         df_imports = df_imports.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
         df_mapping = df_mapping.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
@@ -129,13 +134,21 @@ def process_etl_config():
                 
                 source_mapping = df_mapping[df_mapping['Source_Name'] == source].to_dict('records')
 
+                # Get full qualified tables
+                cursor.execute("SELECT Staging_Table, DW_Table_Name FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source)
+                staging_table, dw_table = cursor.fetchone()
+
+                if not staging_table or not dw_table:
+                    print(f"[SKIP] Missing Staging_Table or DW_Table_Name for {source}")
+                    continue
+
                 ods_ddl = generate_ods_table_ddl(source, source_mapping)
                 (generated_dir / f"ODS_{source}.sql").write_text(ods_ddl)
 
                 dw_ddl = generate_dw_table_ddl('DW', f"Dim_{source}", source_mapping, timestamp)
                 (generated_dir / f"DW_Dim_{source}.sql").write_text(dw_ddl)
 
-                merge_ddl = generate_merge_proc_ddl(source, f"ODS.{source}", source_mapping)
+                merge_ddl = generate_merge_proc_ddl(source, staging_table, dw_table, source_mapping)
                 (generated_dir / f"SP_Merge_Dim_{source}.sql").write_text(merge_ddl)
 
                 execute_proc('ETL.SP_Update_Source_Imports_Last_Checked', f"@SourceName = '{source}', @LastChecked = '{now_str}'")

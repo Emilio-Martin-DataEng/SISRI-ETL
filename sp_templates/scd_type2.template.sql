@@ -15,8 +15,8 @@ BEGIN
         UPDATE d SET
             {type1_update_columns},
             d.Updated_Datetime = GETDATE()
-        FROM [ETL].[Dim_{dim_name}] d
-        INNER JOIN [ETL].[{staging_table}] o ON {join_condition}
+        FROM {dw_table} d
+        INNER JOIN {ods_table} o ON {join_condition}
         WHERE d.Row_Is_Current = 1
           AND ({type1_where_changes});
         SET @UpdatedCount = @@ROWCOUNT;
@@ -26,13 +26,13 @@ BEGIN
             Row_Is_Current = 0,
             Row_Expiry_Datetime = GETDATE(),
             Updated_Datetime = GETDATE()
-        FROM [ETL].[Dim_{dim_name}] d
-        INNER JOIN [ETL].[{staging_table}] o ON {join_condition}
+        FROM {dw_table} d
+        INNER JOIN {ods_table} o ON {join_condition}
         WHERE d.Row_Is_Current = 1
           AND ({type2_where_changes});
         SET @ExpiredCount = @@ROWCOUNT;
 
-        INSERT INTO [ETL].[Dim_{dim_name}] 
+        INSERT INTO {dw_table} 
             ([{key_column}], {insert_columns}, 
              Row_Is_Current, Row_Effective_Datetime, Row_Expiry_Datetime,
              Inserted_Datetime, Updated_Datetime,
@@ -41,9 +41,9 @@ BEGIN
                1, GETDATE(), NULL,
                GETDATE(), NULL,
                'NEW'
-        FROM [ETL].[{staging_table}] o
+        FROM {ods_table} o
         WHERE NOT EXISTS (
-            SELECT 1 FROM [ETL].[Dim_{dim_name}] d 
+            SELECT 1 FROM {dw_table} d 
             WHERE d.[{key_column}] = o.[{key_column}] AND d.Row_Is_Current = 1
         );
         SET @InsertedCount = @@ROWCOUNT;
@@ -54,8 +54,8 @@ BEGIN
             d.Row_Expiry_Datetime = GETDATE(),
             d.Updated_Datetime = GETDATE(),
             d.Row_Change_Reason = 'Soft Deleted'
-        FROM [ETL].[Dim_{dim_name}] d
-        LEFT JOIN [ETL].[{staging_table}] o ON {join_condition}
+        FROM {dw_table} d
+        LEFT JOIN {ods_table} o ON {join_condition}
         WHERE o.{key_column} IS NULL 
           AND d.Row_Is_Current = 1 
           AND d.Is_Deleted = 0;
@@ -66,8 +66,8 @@ BEGIN
             d.Is_Deleted = 0,
             d.Updated_Datetime = GETDATE(),
             d.Row_Change_Reason = 'Reactivated'
-        FROM [ETL].[Dim_{dim_name}] d
-        INNER JOIN [ETL].[{staging_table}] o ON {join_condition}
+        FROM {dw_table} d
+        INNER JOIN {ods_table} o ON {join_condition}
         WHERE d.Is_Deleted = 1;
         SET @ReactivatedCount = @@ROWCOUNT;
 
