@@ -1,5 +1,5 @@
 -- Merge proc for Brands -> ETL.Dim_Brands (SCD Type 1)
--- Generated at 2026-03-04 12:04:26
+-- Generated at 2026-03-04 14:57:18
 CREATE OR ALTER PROCEDURE [ETL].[SP_Merge_Dim_Brands]
     @Source_Import_SK INT = NULL,
     @Audit_Source_Import_SK INT = NULL
@@ -11,13 +11,10 @@ BEGIN
     BEGIN TRY
         DECLARE @InsertedCount INT = 0, @UpdatedCount INT = 0, @DeletedCount INT = 0, @ReactivatedCount INT = 0;
 
-        -- Type 1: UPDATE changed attributes
-        UPDATE d SET
-            d.[Brand_Name] = o.[Brand_Name],
-            d.Updated_Datetime = GETDATE()
-        FROM [DW].[Dim_Brands] d
-        INNER JOIN [ODS].[Brands] o ON d.[Principal_Code] = o.[Principal_Code]
-        WHERE (COALESCE(d.[Brand_Name], '') <> COALESCE(o.[Brand_Name], ''));
+        -- Type 1: UPDATE changed attributes (only if there are Type 1 columns)
+        -- No Type 1 columns to update
+SET @UpdatedCount = 0;
+
         SET @UpdatedCount = @@ROWCOUNT;
 
         -- INSERT new dimension rows

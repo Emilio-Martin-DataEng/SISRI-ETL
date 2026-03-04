@@ -11,13 +11,8 @@ BEGIN
     BEGIN TRY
         DECLARE @InsertedCount INT = 0, @UpdatedCount INT = 0, @DeletedCount INT = 0, @ReactivatedCount INT = 0;
 
-        -- Type 1: UPDATE changed attributes
-        UPDATE d SET
-            {update_columns},
-            d.Updated_Datetime = GETDATE()
-        FROM {dw_table} d
-        INNER JOIN {ods_table} o ON {join_condition}
-        WHERE ({type1_where_changes});
+        -- Type 1: UPDATE changed attributes (only if there are Type 1 columns)
+        {type1_update_block}
         SET @UpdatedCount = @@ROWCOUNT;
 
         -- INSERT new dimension rows

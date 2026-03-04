@@ -1,5 +1,5 @@
-Source_Imports	config	ETL_Config.xlsx	Source_Imports	[ETL].[Source_Imports]	0.1	1	List of flat file imports	[ETL].[Dim_Source_Imports]	[ETL].[SP_Merge_Dim_Source_Imports]	0	2026-03-04 12:04:26.000
-Source_File_Mapping	config	ETL_Config.xlsx	Source_File_Mapping	[ETL].[Source_File_Mapping]	0.11	1	Flat file field to table name mapping	[ETL].[Dim_Source_Imports_Mapping]	[ETL].[SP_Merge_Dim_Source_Imports_Mapping]	0	2026-03-04 12:04:26.000
-Principals	raw/MDM	Principals.xlsx	Sheet1	[ODS].[Principals]	1	1	Small dimension, single file	[DW].[Dim_Principals]	[DW].[SP_Merge_Dim_Principals]	1	2026-03-04 12:04:26.000
-Brands	raw/MDM	Brands.xlsx	Sheet1	[ODS].[Brands]	1.1	1	Small dimension, single file	[DW].[Dim_Brands]	[DW].[SP_Merge_Dim_Brands]	1	2026-03-04 12:04:26.000
-Wholesalers	raw/MDM	Wholesalers.xlsx	Sheet1	[ODS].[Wholesalers]	1.2	0	Small dimension, single file	[DW].[Dim_Brands]	[DW].[SP_Merge_Dim_Brands]	0	2026-03-04 12:04:26.000
+Source_Imports	config	ETL_Config.xlsx	Source_Imports	[ETL].[Source_Imports]	0.1	1	List of flat file imports	[ETL].[Dim_Source_Imports]	[ETL].[SP_Merge_Dim_Source_Imports]	0	2026-03-04 14:57:16.000
+Source_File_Mapping	config	ETL_Config.xlsx	Source_File_Mapping	[ETL].[Source_File_Mapping]	0.11	1	Flat file field to table name mapping	[ETL].[Dim_Source_Imports_Mapping]	[ETL].[SP_Merge_Dim_Source_Imports_Mapping]	0	2026-03-04 14:57:16.000
+Principals	raw/MDM	Principals.xlsx	Sheet1	[ODS].[Principals]	1	1	Small dimension, single file	[DW].[Dim_Principals]	[DW].[SP_Merge_Dim_Principals]	1	2026-03-04 14:57:16.000
+Brands	raw/MDM	Brands.xlsx	Sheet1	[ODS].[Brands]	1.1	1	Small dimension, single file	[DW].[Dim_Brands]	[DW].[SP_Merge_Dim_Brands]	1	2026-03-04 14:57:16.000
+Wholesalers	raw/MDM	Wholesalers.xlsx	Sheet1	[ODS].[Wholesalers]	1.2	0	Small dimension, single file	[DW].[Dim_Brands]	[DW].[SP_Merge_Dim_Brands]	0	2026-03-04 14:57:16.000

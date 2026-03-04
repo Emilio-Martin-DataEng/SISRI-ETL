@@ -1,5 +1,5 @@
 -- Merge proc for Principals -> ETL.Dim_Principals (SCD Type 1)
--- Generated at 2026-03-04 12:04:26
+-- Generated at 2026-03-04 14:57:17
 CREATE OR ALTER PROCEDURE [ETL].[SP_Merge_Dim_Principals]
     @Source_Import_SK INT = NULL,
     @Audit_Source_Import_SK INT = NULL
@@ -11,18 +11,15 @@ BEGIN
     BEGIN TRY
         DECLARE @InsertedCount INT = 0, @UpdatedCount INT = 0, @DeletedCount INT = 0, @ReactivatedCount INT = 0;
 
-        -- Type 1: UPDATE changed attributes
-        UPDATE d SET
-            d.[Principal_Name] = o.[Principal_Name], d.[Principal_Trading_As_Name] = o.[Principal_Trading_As_Name], d.[Principal_Address ] = o.[Principal_Address ], d.[Principal_City    ] = o.[Principal_City    ], d.[Principal_Province] = o.[Principal_Province], d.[Principal_Country ] = o.[Principal_Country ],
-            d.Updated_Datetime = GETDATE()
-        FROM [DW].[Dim_Principals] d
-        INNER JOIN [ODS].[Principals] o ON d.[Principal_Code] = o.[Principal_Code]
-        WHERE (COALESCE(d.[Principal_Name], '') <> COALESCE(o.[Principal_Name], '') OR COALESCE(d.[Principal_Trading_As_Name], '') <> COALESCE(o.[Principal_Trading_As_Name], '') OR COALESCE(d.[Principal_Address ], '') <> COALESCE(o.[Principal_Address ], '') OR COALESCE(d.[Principal_City    ], '') <> COALESCE(o.[Principal_City    ], '') OR COALESCE(d.[Principal_Province], '') <> COALESCE(o.[Principal_Province], '') OR COALESCE(d.[Principal_Country ], '') <> COALESCE(o.[Principal_Country ], ''));
+        -- Type 1: UPDATE changed attributes (only if there are Type 1 columns)
+        -- No Type 1 columns to update
+SET @UpdatedCount = 0;
+
         SET @UpdatedCount = @@ROWCOUNT;
 
         -- INSERT new dimension rows
-        INSERT INTO [DW].[Dim_Principals] ([Principal_Code], [Principal_Name], [Principal_Trading_As_Name], [Principal_Address ], [Principal_City    ], [Principal_Province], [Principal_Country ], [Inserted_Datetime], [Updated_Datetime], [Row_Change_Reason])
-        SELECT o.[Principal_Code], o.[Principal_Name], o.[Principal_Trading_As_Name], o.[Principal_Address ], o.[Principal_City    ], o.[Principal_Province], o.[Principal_Country ], GETDATE(), NULL, 'NEW'
+        INSERT INTO [DW].[Dim_Principals] ([Principal_Code], [Principal_Name], [Principal_Trading_As_Name], [Principal_Address], [Principal_City], [Principal_Province], [Principal_Country], [Inserted_Datetime], [Updated_Datetime], [Row_Change_Reason])
+        SELECT o.[Principal_Code], o.[Principal_Name], o.[Principal_Trading_As_Name], o.[Principal_Address], o.[Principal_City], o.[Principal_Province], o.[Principal_Country], GETDATE(), NULL, 'NEW'
         FROM [ODS].[Principals] o
         WHERE NOT EXISTS (SELECT 1 FROM [DW].[Dim_Principals] d WHERE d.[Principal_Code] = o.[Principal_Code]);
         SET @InsertedCount = @@ROWCOUNT;

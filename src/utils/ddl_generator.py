@@ -35,84 +35,45 @@ GO"""
 def generate_dw_table_ddl(schema: str, table_name: str, columns: list[dict], timestamp: str) -> str:
     sk_col = f"{table_name.replace('Dim_', '')}_SK"
     
-    column_defs = [f"    [{sk_col}] INT IDENTITY(1,1) NOT NULL CONSTRAINT [PK_{table_name}] PRIMARY KEY"]
-    
-    has_scd2 = any(c.get('Is_Type2_Attribute', False) for c in columns)
-    if has_scd2:
-        column_defs.extend([
-            "    [Row_Is_Current] BIT NOT NULL DEFAULT 1",
-            "    [Row_Effective_Datetime] DATETIME NOT NULL DEFAULT GETDATE()",
-            "    [Row_Expiry_Datetime] DATETIME NULL"
-        ])
-    
-    column_defs.append("    [Inserted_Datetime] DATETIME2 NOT NULL DEFAULT GETDATE()")
-    column_defs.append("    [Updated_Datetime] DATETIME NULL")
-    column_defs.append("    [Is_Deleted] BIT NOT NULL DEFAULT 0")
-    column_defs.append("    [Row_Change_Reason] VARCHAR(50) NULL")
-    
+    # Build column definitions for data columns
+    column_defs_list = []
+    insert_columns_list = []
     for col in columns:
         col_name = col['Target_Column'].strip()
         nullability = "NOT NULL" if col.get('Is_Required', False) else "NULL"
-        column_defs.append(f"    [{col_name}] {col['Data_Type']} {nullability}")
+        column_defs_list.append(f", [{col_name}] {col['Data_Type']} {nullability}")
+        insert_columns_list.append(f"[{col_name}]")
     
+    column_defs = '\n'.join(column_defs_list)
+    insert_columns = ', '.join(insert_columns_list)
+    select_columns = insert_columns  # same for SELECT
+    
+    # Unique index clause
     nk_cols = [c['Target_Column'].strip() for c in columns if c.get('Is_PK', False)]
     nk_where = "WHERE [Is_Deleted] = 0"
-    if has_scd2:
+    if any(c.get('Is_Type2_Attribute', False) for c in columns):
         nk_where = "WHERE [Row_Is_Current] = 1 AND [Is_Deleted] = 0"
-    nk_clause = f"CREATE UNIQUE NONCLUSTERED INDEX [UIX_NK_{table_name}_Active] ON [{schema}].[{table_name}] ({', '.join([f'[{col}]' for col in nk_cols])}) {nk_where};" if nk_cols else ""
+    unique_index_clause = f"CREATE UNIQUE NONCLUSTERED INDEX [UIX_NK_{table_name}_Active] ON [{schema}].[{table_name}] ({', '.join([f'[{col}]' for col in nk_cols])}) {nk_where};" if nk_cols else ""
 
-    common_cols = [c['Target_Column'].strip() for c in columns] + ["Inserted_Datetime", "Updated_Datetime", "Is_Deleted"]
-    if has_scd2:
-        common_cols += ["Row_Is_Current", "Row_Effective_Datetime", "Row_Expiry_Datetime"]
-    insert_list = ', '.join([f'[{col}]' for col in common_cols])
-    select_list = ', '.join([f"[{col}]" for col in common_cols])
+    # Load template
+    template_path = BASE_PATH() / "sp_templates" / "dw_dim_tables_regeneration.template.sql"
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template missing: {template_path}")
     
-    backup_table = f"{table_name}_backup_{timestamp}"
-    
-    ddl = f"""-- Safe regeneration for {schema}.{table_name} with SK preservation
+    template = template_path.read_text(encoding="utf-8")
 
--- Clean up any leftover temp table
-IF OBJECT_ID('tempdb..#Temp_{table_name}') IS NOT NULL
-    DROP TABLE #Temp_{table_name};
-GO
-
-IF OBJECT_ID('{schema}.{table_name}', 'U') IS NOT NULL
-BEGIN
-    -- Drop constraints and indexes
-    IF EXISTS (SELECT * FROM sys.key_constraints WHERE name = 'PK_{table_name}' AND parent_object_id = OBJECT_ID('{schema}.{table_name}'))
-        ALTER TABLE [{schema}].[{table_name}] DROP CONSTRAINT PK_{table_name};
-    
-    IF EXISTS (SELECT * FROM sys.indexes WHERE name = 'UIX_NK_{table_name}_Active' AND object_id = OBJECT_ID('{schema}.{table_name}'))
-        DROP INDEX [UIX_NK_{table_name}_Active] ON [{schema}].[{table_name}];
-    
-    -- Rename old table to backup
-    EXEC sp_rename '{schema}.{table_name}', '{backup_table}';
-END
-GO
-
--- Create new table
-CREATE TABLE [{schema}].[{table_name}] (
-{',\n'.join(column_defs)}
-);
-GO
-
--- Restore data with IDENTITY_INSERT ON to preserve SKs
-IF OBJECT_ID('{schema}.{backup_table}', 'U') IS NOT NULL
-BEGIN
-    SET IDENTITY_INSERT [{schema}].[{table_name}] ON;
-    
-    INSERT INTO [{schema}].[{table_name}] ([{sk_col}], {insert_list})
-    SELECT [{sk_col}], {select_list} FROM [{schema}].[{backup_table}];
-    
-    SET IDENTITY_INSERT [{schema}].[{table_name}] OFF;
-    
-    -- Optional: drop backup after success (comment out if you want to keep it)
-    -- DROP TABLE [{schema}].[{backup_table}];
-END
-GO
-
-{nk_clause}
-GO"""
+    # Substitute
+    ddl = template.format(
+        schema=schema,
+        table_name=table_name,
+        sk_col=sk_col,
+        generated_time=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        timestamp=timestamp,
+        column_defs=column_defs,
+        insert_columns=insert_columns,
+        select_columns=select_columns,
+        unique_index_clause=unique_index_clause
+    )
     return ddl
 
 def apply_ddl_from_run():
@@ -193,15 +154,29 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, dw_table: str,
     select_columns = ', '.join([f"o.[{c['Target_Column']}]" for c in columns])
     join_condition = f"d.[{key_column}] = o.[{key_column}]"
 
-    # Use full qualified names directly
+    # Conditional Type 1 UPDATE block
+    type1_update_block = ""
+    if type1_cols:
+        type1_update_block = f"""-- Type 1: UPDATE changed attributes
+UPDATE d SET
+    {update_columns},
+    d.Updated_Datetime = GETDATE()
+FROM {dw_table} d
+INNER JOIN {staging_table} o ON {join_condition}
+WHERE ({type1_where_changes});
+SET @UpdatedCount = @@ROWCOUNT;
+"""
+    else:
+        type1_update_block = """-- No Type 1 columns to update
+SET @UpdatedCount = 0;
+"""
+
     ddl = template.format(
         dim_name=source_name,
-        dw_table=dw_table,           # e.g. [DW].[Dim_Brands]
-        ods_table=staging_table,     # e.g. [ODS].[Brands]
+        dw_table=dw_table,
+        ods_table=staging_table,
         generated_time=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        update_columns=update_columns,
-        type1_update_columns=update_columns,
-        type1_where_changes=type1_where_changes,
+        type1_update_block=type1_update_block,
         type2_where_changes=type2_where_changes,
         insert_columns=insert_columns,
         select_columns=select_columns,

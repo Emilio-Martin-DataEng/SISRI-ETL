@@ -1,5 +1,8 @@
 # src/staging/etl_config.py
 
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)  # Silence Pandas deprecation warning
+
 from pathlib import Path
 import pandas as pd
 import csv
@@ -8,14 +11,14 @@ from datetime import datetime
 from src.config import SYSTEM_BASE_PATH, get_config, get_db_config
 from src.utils.db import upload_via_bcp
 from src.utils.db_ops import (
-    get_connection,
     truncate_table,
     execute_proc,
     log_audit_source_import,
     get_next_audit_import_id,
-    get_source_import_sk
+    get_source_import_sk,
+    get_connection
 )
-from src.utils.ddl_generator import generate_ods_table_ddl, generate_merge_proc_ddl, generate_dw_table_ddl, apply_ddl_from_run
+from src.utils.ddl_generator import generate_ods_table_ddl, generate_dw_table_ddl, generate_merge_proc_ddl
 
 def process_etl_config():
     start_time = datetime.now()
@@ -42,7 +45,7 @@ def process_etl_config():
         config_folder = SYSTEM_BASE_PATH() / get_config("system", "config_folder", "config")
         config_filename = get_config("system", "config_filename", "ETL_Config.xlsx")
         config_files = list(config_folder.glob(config_filename))
-        
+
         if not config_files:
             end_time = datetime.now()
             log_audit_source_import(
@@ -68,15 +71,14 @@ def process_etl_config():
         format_dir.mkdir(exist_ok=True)
 
         df_imports = pd.read_excel(config_file, sheet_name="Source_Imports", dtype=str)
-        df_mapping = pd.read_excel(config_file, sheet_name="Source_File_Mapping", dtype={
-            'Is_Type2_Attribute': 'int',
-            'Is_PK': 'int',
-            'Is_Required': 'int',
-            'Is_Deleted': 'int'
-        })
+        df_mapping = pd.read_excel(config_file, sheet_name="Source_File_Mapping", dtype=str)
 
+        # Aggressive trimming to remove all whitespace issues
+        string_cols = df_mapping.select_dtypes(include=['object']).columns
+        df_mapping[string_cols] = df_mapping[string_cols].apply(
+            lambda x: x.str.strip().replace(r'[\s\xa0\t\r\n]+', ' ', regex=True).str.strip()
+        )
         df_imports = df_imports.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
-        df_mapping = df_mapping.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
 
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S.000')
         df_imports['Inserted_Datetime'] = now_str
@@ -84,7 +86,7 @@ def process_etl_config():
 
         temp_dir = SYSTEM_BASE_PATH() / get_config("system", "temp_folder", "temp")
         temp_dir.mkdir(exist_ok=True)
-        
+
         imports_path = temp_dir / "source_imports_stg.txt"
         mapping_path = temp_dir / "source_file_mapping_stg.txt"
 
@@ -102,8 +104,10 @@ def process_etl_config():
         execute_proc('ETL.SP_Merge_Dim_Source_Imports')
         execute_proc('ETL.SP_Merge_Dim_Source_Imports_Mapping')
 
-        # Generate DDL only for active data sources if mapping changed
-        active_data_sources = df_imports[(df_imports['Is_Active'] == '1') & (~df_imports['Source_Name'].isin(['Source_Imports', 'Source_File_Mapping']))]['Source_Name'].unique()
+        active_data_sources = df_imports[
+            (df_imports['Is_Active'] == '1') & 
+            (~df_imports['Source_Name'].isin(['Source_Imports', 'Source_File_Mapping']))
+        ]['Source_Name'].unique()
 
         generated_dir = SYSTEM_BASE_PATH() / get_config("system", "ddl_generated_subfolder", "DW_DDL/generated")
         generated_dir.mkdir(parents=True, exist_ok=True)
@@ -116,7 +120,8 @@ def process_etl_config():
         for source in active_data_sources:
             # Get force flag
             cursor.execute("SELECT Force_DDL_Generation FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source)
-            force_ddl = cursor.fetchone()[0] or 0
+            force_row = cursor.fetchone()
+            force_ddl = force_row[0] if force_row else 0
 
             cursor.execute("EXEC [ETL].[SP_Get_Source_Imports_Last_Checked] ?", source)
             last_checked_row = cursor.fetchone()
@@ -127,16 +132,18 @@ def process_etl_config():
                 FROM [ETL].[Dim_Source_Imports_Mapping] 
                 WHERE Source_Name = ?
             """, source)
-            max_mapping_change = cursor.fetchone()[0]
+            max_mapping_change_row = cursor.fetchone()
+            max_mapping_change = max_mapping_change_row[0] if max_mapping_change_row else None
 
-            if force_ddl or (last_checked is None or max_mapping_change > last_checked):
+            if force_ddl or (last_checked is None or (max_mapping_change and max_mapping_change > last_checked)):
                 print(f"[DDL] Mapping changed or forced for {source} - generating DDL")
-                
+
                 source_mapping = df_mapping[df_mapping['Source_Name'] == source].to_dict('records')
 
-                # Get full qualified tables
+                # Get full qualified table names
                 cursor.execute("SELECT Staging_Table, DW_Table_Name FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source)
-                staging_table, dw_table = cursor.fetchone()
+                row = cursor.fetchone()
+                staging_table, dw_table = row if row else (None, None)
 
                 if not staging_table or not dw_table:
                     print(f"[SKIP] Missing Staging_Table or DW_Table_Name for {source}")
@@ -152,7 +159,6 @@ def process_etl_config():
                 (generated_dir / f"SP_Merge_Dim_{source}.sql").write_text(merge_ddl)
 
                 execute_proc('ETL.SP_Update_Source_Imports_Last_Checked', f"@SourceName = '{source}', @LastChecked = '{now_str}'")
-
             else:
                 print(f"[DDL] No mapping change for {source} - skipping generation")
 
