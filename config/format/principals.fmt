@@ -1,10 +1,11 @@
 14.0
 8
-1	SQLCHAR	0	500	"\t"	1	Principal_Code	SQL_Latin1_General_CP1_CI_AS
-2	SQLCHAR	0	500	"\t"	2	Principal_Name	SQL_Latin1_General_CP1_CI_AS
-3	SQLCHAR	0	500	"\t"	3	Principal_Trading_As_Name	SQL_Latin1_General_CP1_CI_AS
-4	SQLCHAR	0	500	"\t"	4	Principal_Address 	SQL_Latin1_General_CP1_CI_AS
-5	SQLCHAR	0	500	"\t"	5	Principal_City    	SQL_Latin1_General_CP1_CI_AS
-6	SQLCHAR	0	500	"\t"	6	Principal_Province	SQL_Latin1_General_CP1_CI_AS
-7	SQLCHAR	0	500	"\t"	7	Principal_Country 	SQL_Latin1_General_CP1_CI_AS
-8	SQLCHAR	0	30	"\r\n"	8	Inserted_Datetime	""
+1 SQLCHAR 0 8000 "	" 1 Principal_Code SQL_Latin1_General_CP1_CI_AS
+2 SQLCHAR 0 8000 "	" 2 Principal_Name SQL_Latin1_General_CP1_CI_AS
+3 SQLCHAR 0 8000 "	" 3 Principal_Trading_As_Name SQL_Latin1_General_CP1_CI_AS
+4 SQLCHAR 0 8000 "	" 4 Principal_Address SQL_Latin1_General_CP1_CI_AS
+5 SQLCHAR 0 8000 "	" 5 Principal_City SQL_Latin1_General_CP1_CI_AS
+6 SQLCHAR 0 8000 "	" 6 Principal_Province SQL_Latin1_General_CP1_CI_AS
+7 SQLCHAR 0 8000 "
+" 7 Principal_Country SQL_Latin1_General_CP1_CI_AS
+8 SQLCHAR 0 30 "\r\n" 8 Inserted_Datetime 

@@ -1,14 +1,14 @@
 14.0
-12
-1       SQLCHAR             0       100     "\t"       1     Source_Name                            SQL_Latin1_General_CP1_CI_AS
-2       SQLCHAR             0       500     "\t"       2     Rel_Path                               SQL_Latin1_General_CP1_CI_AS
-3       SQLCHAR             0       100     "\t"       3     Pattern                                SQL_Latin1_General_CP1_CI_AS
-4       SQLCHAR             0       100     "\t"       4     Sheet_Name                             SQL_Latin1_General_CP1_CI_AS
-5       SQLCHAR             0       100     "\t"       5     Staging_Table                          SQL_Latin1_General_CP1_CI_AS
-6       SQLCHAR             0       50      "\t"       6     Processing_Order                       SQL_Latin1_General_CP1_CI_AS
-7       SQLCHAR             0       50      "\t"       7     Is_Active                              SQL_Latin1_General_CP1_CI_AS
-8       SQLCHAR             0       500     "\t"       8     Description                            SQL_Latin1_General_CP1_CI_AS
-9       SQLCHAR             0       300     "\t"       9     DW_Table_Name                          SQL_Latin1_General_CP1_CI_AS
-10      SQLCHAR             0       300     "\t"       10    Merge_Proc_Name                        SQL_Latin1_General_CP1_CI_AS
-11      SQLCHAR             0       1       "\t"       11    Merge_Proc_Name                        SQL_Latin1_General_CP1_CI_AS
-12      SQLCHAR             0       30      "\r\n"     12    Inserted_Datetime                      ""
+11
+1 SQLCHAR 0 8000 "	" 1 Source_Name SQL_Latin1_General_CP1_CI_AS
+2 SQLCHAR 0 8000 "	" 2 Rel_Path SQL_Latin1_General_CP1_CI_AS
+3 SQLCHAR 0 8000 "	" 3 Pattern SQL_Latin1_General_CP1_CI_AS
+4 SQLCHAR 0 8000 "	" 4 Sheet_Name SQL_Latin1_General_CP1_CI_AS
+5 SQLCHAR 0 8000 "	" 5 Staging_Table SQL_Latin1_General_CP1_CI_AS
+6 SQLCHAR 0 8000 "	" 6 Processing_Order SQL_Latin1_General_CP1_CI_AS
+7 SQLCHAR 0 8000 "	" 7 Is_Active SQL_Latin1_General_CP1_CI_AS
+8 SQLCHAR 0 8000 "	" 8 Description SQL_Latin1_General_CP1_CI_AS
+9 SQLCHAR 0 8000 "	" 9 DW_Table_Name SQL_Latin1_General_CP1_CI_AS
+10 SQLCHAR 0 8000 "
+" 10 Merge_Proc_Name SQL_Latin1_General_CP1_CI_AS
+11 SQLCHAR 0 30 "\r\n" 11 Inserted_Datetime 

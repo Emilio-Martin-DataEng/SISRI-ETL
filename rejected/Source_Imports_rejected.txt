@@ -1,0 +1,5 @@
+Rejected rows for Source_Imports - 2026-03-05 15:58:45.408488
+
+--- ERROR processing etl_config.xlsx ---
+upload_via_bcp() got an unexpected keyword argument 'error_file'
+

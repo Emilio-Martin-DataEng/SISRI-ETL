@@ -6,21 +6,26 @@ from pathlib import Path
 from src.config import SYSTEM_BASE_PATH
 from src.utils.db_ops import get_connection, log_audit_source_import, get_next_audit_import_id, execute_proc
 
+ 
+
 def generate_ods_table_ddl(source_name: str, columns: list[dict]) -> str:
     column_defs = []
     pk_cols = []
 
     for col in columns:
         col_name = col['Target_Column'].strip()
-        nullability = "NOT NULL" if col.get('Is_Required', False) else "NULL"
+        # Robust conversion of Is_Required
+        is_required = int(col.get('Is_Required', 0)) == 1
+        nullability = "NOT NULL" if is_required else "NULL"
         column_defs.append(f"    [{col_name}] {col['Data_Type']} {nullability}")
         
-        if col.get('Is_PK', False):
+        # Robust conversion of Is_PK
+        if int(col.get('Is_PK', 0)) == 1:
             pk_cols.append(f"[{col_name}]")
 
     pk_clause = ""
     if pk_cols:
-        pk_clause = f", CONSTRAINT PK_{source_name} PRIMARY KEY ({', '.join(pk_cols)}) "
+        pk_clause = f", CONSTRAINT PK_{source_name} PRIMARY KEY ({', '.join(pk_cols)})"
 
     ddl = f"""IF OBJECT_ID('ODS.{source_name}', 'U') IS NOT NULL
 DROP TABLE [ODS].[{source_name}];
@@ -35,7 +40,21 @@ GO"""
     return ddl
 
 def generate_dw_table_ddl(schema: str, table_name: str, columns: list[dict], timestamp: str) -> str:
-    template_path = SYSTEM_BASE_PATH() / "sp_templates" / "dw_dim_tables_regeneration.template.sql"
+    """
+    Generates DW dimension table regeneration script using separate SCD1/SCD2 templates.
+    Robust SCD2 detection + safe bit flag handling.
+    """
+    # Robust SCD2 detection (same logic as merge proc)
+    is_scd2 = any(
+        val in (1, 1.0, '1', True) or (isinstance(val, str) and val.strip() == '1')
+        for c in columns
+        for val in [c.get('Is_Type2_Attribute')]
+        if val is not None
+    )
+
+    pattern = 'dim_table_scd_type2' if is_scd2 else 'dim_table_scd_type1'
+    
+    template_path = SYSTEM_BASE_PATH() / "sp_templates" / f"{pattern}.template.sql"
     if not template_path.exists():
         raise FileNotFoundError(f"Template missing: {template_path}")
     
@@ -43,48 +62,30 @@ def generate_dw_table_ddl(schema: str, table_name: str, columns: list[dict], tim
 
     sk_col = f"{table_name.replace('Dim_', '')}_SK"
     
-    has_scd2 = any(
-        val in (1, 1.0, '1', True) or (isinstance(val, str) and val.strip() == '1')
-        for c in columns
-        for val in [c.get('Is_Type2_Attribute')]
-        if val is not None
-    )
-
-    # Build metadata columns in correct order (SCD2 first if present, then common)
-    metadata_defs = []
-    if has_scd2:
-        metadata_defs.extend([
-            "    [Row_Is_Current] BIT NOT NULL DEFAULT 1,",
-            "    [Row_Effective_Datetime] DATETIME NOT NULL DEFAULT GETDATE(),",
-            "    [Row_Expiry_Datetime] DATETIME NULL,"
-        ])
-    
-    metadata_defs.extend([
-        "    [Inserted_Datetime] DATETIME2 NOT NULL DEFAULT GETDATE(),",
-        "    [Updated_Datetime] DATETIME NULL,",
-        "    [Is_Deleted] BIT NOT NULL DEFAULT 0,",
-        "    [Row_Change_Reason] VARCHAR(50) NULL"
-    ])
-
-    # Data columns
+    # Data columns only (metadata handled in template)
     data_defs = []
     insert_cols = []
     for col in columns:
         col_name = col['Target_Column'].strip()
-        nullability = "NOT NULL" if col.get('Is_Required', False) else "NULL"
+        # Robust Is_Required conversion
+        is_required = int(col.get('Is_Required', 0)) == 1
+        nullability = "NOT NULL" if is_required else "NULL"
         data_defs.append(f", [{col_name}] {col['Data_Type']} {nullability}")
         insert_cols.append(f"[{col_name}]")
     
-    column_defs = '\n'.join(metadata_defs + data_defs)
+    column_defs = '\n'.join(data_defs)
     insert_columns = ', '.join(insert_cols)
     select_columns = insert_columns
 
     # Unique index
-    nk_cols = [c['Target_Column'].strip() for c in columns if c.get('Is_PK', False)]
+    nk_cols = [c['Target_Column'].strip() for c in columns if int(c.get('Is_PK', 0)) == 1]
     nk_where = "WHERE [Is_Deleted] = 0"
-    if has_scd2:
+    if is_scd2:
         nk_where = "WHERE [Row_Is_Current] = 1 AND [Is_Deleted] = 0"
-    unique_index_clause = f"CREATE UNIQUE NONCLUSTERED INDEX [UIX_NK_{table_name}_Active] ON [{schema}].[{table_name}] ({', '.join([f'[{col}]' for col in nk_cols])}) {nk_where};" if nk_cols else ""
+    unique_index_clause = (
+        f"CREATE UNIQUE NONCLUSTERED INDEX [UIX_NK_{table_name}_Active] "
+        f"ON [{schema}].[{table_name}] ({', '.join([f'[{col}]' for col in nk_cols])}) {nk_where};"
+    ) if nk_cols else "-- No natural key columns defined - no unique index created"
 
     ddl = template.format(
         schema=schema,
@@ -115,13 +116,13 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, dw_table: str,
     
     template = template_path.read_text(encoding="utf-8")
 
-    key_column = next((c['Target_Column'] for c in columns if c.get('Is_PK', False)), 'Source_Name')
+    key_column = next((c['Target_Column'] for c in columns if int(c.get('Is_PK', 0)) == 1), 'Source_Name')
     
-    type1_cols = [c for c in columns if not c.get('Is_Type2_Attribute', False) and not c.get('Is_PK', False)]
+    type1_cols = [c for c in columns if int(c.get('Is_Type2_Attribute', 0)) != 1 and int(c.get('Is_PK', 0)) != 1]
     update_columns = ', '.join([f"d.[{c['Target_Column']}] = o.[{c['Target_Column']}]" for c in type1_cols])
     type1_where_changes = ' OR '.join([f"COALESCE(d.[{c['Target_Column']}], '') <> COALESCE(o.[{c['Target_Column']}], '')" for c in type1_cols]) or "1=0"
     
-    type2_cols = [c for c in columns if c.get('Is_Type2_Attribute', False)]
+    type2_cols = [c for c in columns if int(c.get('Is_Type2_Attribute', 0)) == 1]
     type2_where_changes = ' OR '.join([f"COALESCE(d.[{c['Target_Column']}], '') <> COALESCE(o.[{c['Target_Column']}], '')" for c in type2_cols]) or "1=0"
     
     insert_columns = ', '.join([f"[{c['Target_Column']}]" for c in columns])

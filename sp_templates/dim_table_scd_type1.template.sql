@@ -1,4 +1,4 @@
--- Safe regeneration template for {schema}.{table_name}
+-- Safe regeneration template for {schema}.{table_name} (SCD Type 1)
 -- Generated at {generated_time}
 
 -- Drop old backup if it exists (prevents rename conflict)

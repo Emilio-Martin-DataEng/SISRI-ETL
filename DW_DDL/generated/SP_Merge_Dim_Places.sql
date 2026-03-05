@@ -1,5 +1,5 @@
 -- Merge proc for Places -> [DW].[Dim_Places] (SCD Type 2)
--- Generated at 2026-03-05 13:21:40
+-- Generated at 2026-03-05 15:02:49
 CREATE OR ALTER PROCEDURE [ETL].[SP_Merge_Dim_Places]
     @Source_Import_SK INT = NULL,
     @Audit_Source_Import_SK INT = NULL
@@ -12,8 +12,14 @@ BEGIN
         DECLARE @InsertedCount INT = 0, @UpdatedCount INT = 0, @DeletedCount INT = 0, @ReactivatedCount INT = 0, @ExpiredCount INT = 0;
 
         -- Type 1 UPDATE block (conditional - injected from Python)
-        -- No Type 1 columns to update
-SET @UpdatedCount = 0;
+        -- Type 1: UPDATE changed attributes
+UPDATE d SET
+    d.[Place_Name] = o.[Place_Name], d.[Place_Chain] = o.[Place_Chain], d.[Place_Address] = o.[Place_Address], d.[Place_City] = o.[Place_City], d.[Place_Province] = o.[Place_Province], d.[Place_Country] = o.[Place_Country], d.[Place_Latitude] = o.[Place_Latitude], d.[Place_Longitude] = o.[Place_Longitude], d.[Place_Contact_Number] = o.[Place_Contact_Number], d.[Place_Contact_Name] = o.[Place_Contact_Name], d.[Place_Contact_Title] = o.[Place_Contact_Title], d.[Place_Contact_Email] = o.[Place_Contact_Email], d.[Place_Website] = o.[Place_Website],
+    d.Updated_Datetime = GETDATE()
+FROM [DW].[Dim_Places] d
+INNER JOIN [ODS].[Places] o ON d.[Place_Code] = o.[Place_Code]
+WHERE (COALESCE(d.[Place_Name], '') <> COALESCE(o.[Place_Name], '') OR COALESCE(d.[Place_Chain], '') <> COALESCE(o.[Place_Chain], '') OR COALESCE(d.[Place_Address], '') <> COALESCE(o.[Place_Address], '') OR COALESCE(d.[Place_City], '') <> COALESCE(o.[Place_City], '') OR COALESCE(d.[Place_Province], '') <> COALESCE(o.[Place_Province], '') OR COALESCE(d.[Place_Country], '') <> COALESCE(o.[Place_Country], '') OR COALESCE(d.[Place_Latitude], '') <> COALESCE(o.[Place_Latitude], '') OR COALESCE(d.[Place_Longitude], '') <> COALESCE(o.[Place_Longitude], '') OR COALESCE(d.[Place_Contact_Number], '') <> COALESCE(o.[Place_Contact_Number], '') OR COALESCE(d.[Place_Contact_Name], '') <> COALESCE(o.[Place_Contact_Name], '') OR COALESCE(d.[Place_Contact_Title], '') <> COALESCE(o.[Place_Contact_Title], '') OR COALESCE(d.[Place_Contact_Email], '') <> COALESCE(o.[Place_Contact_Email], '') OR COALESCE(d.[Place_Website], '') <> COALESCE(o.[Place_Website], ''));
+SET @UpdatedCount = @@ROWCOUNT;
 
 
         -- Type 2 change detected: Expire current row + INSERT new version
@@ -24,7 +30,7 @@ SET @UpdatedCount = 0;
         FROM [DW].[Dim_Places] d
         INNER JOIN [ODS].[Places] o ON d.[Place_Code] = o.[Place_Code]
         WHERE d.Row_Is_Current = 1
-          AND (COALESCE(d.[Place_Code], '') <> COALESCE(o.[Place_Code], '') OR COALESCE(d.[Place_Name], '') <> COALESCE(o.[Place_Name], '') OR COALESCE(d.[Place_Category], '') <> COALESCE(o.[Place_Category], '') OR COALESCE(d.[Place_Sub_Category], '') <> COALESCE(o.[Place_Sub_Category], '') OR COALESCE(d.[Place_Chain], '') <> COALESCE(o.[Place_Chain], '') OR COALESCE(d.[Place_Address], '') <> COALESCE(o.[Place_Address], '') OR COALESCE(d.[Place_City], '') <> COALESCE(o.[Place_City], '') OR COALESCE(d.[Place_Province], '') <> COALESCE(o.[Place_Province], '') OR COALESCE(d.[Place_Country], '') <> COALESCE(o.[Place_Country], '') OR COALESCE(d.[Place_Latitude], '') <> COALESCE(o.[Place_Latitude], '') OR COALESCE(d.[Place_Longitude], '') <> COALESCE(o.[Place_Longitude], '') OR COALESCE(d.[Place_Contact_Number], '') <> COALESCE(o.[Place_Contact_Number], '') OR COALESCE(d.[Place_Contact_Name], '') <> COALESCE(o.[Place_Contact_Name], '') OR COALESCE(d.[Place_Contact_Title], '') <> COALESCE(o.[Place_Contact_Title], '') OR COALESCE(d.[Place_Contact_Email], '') <> COALESCE(o.[Place_Contact_Email], '') OR COALESCE(d.[Place_Website], '') <> COALESCE(o.[Place_Website], ''));
+          AND (COALESCE(d.[Place_Category], '') <> COALESCE(o.[Place_Category], '') OR COALESCE(d.[Place_Sub_Category], '') <> COALESCE(o.[Place_Sub_Category], ''));
         SET @ExpiredCount = @@ROWCOUNT;
 
         INSERT INTO [DW].[Dim_Places] (

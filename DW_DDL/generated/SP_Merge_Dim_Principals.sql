@@ -1,0 +1,93 @@
+-- Merge proc for Principals -> [DW].[Dim_Principals] (SCD Type 2)
+-- Generated at 2026-03-05 15:02:49
+CREATE OR ALTER PROCEDURE [ETL].[SP_Merge_Dim_Principals]
+    @Source_Import_SK INT = NULL,
+    @Audit_Source_Import_SK INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    DECLARE @ProcName SYSNAME = N'ETL.SP_Merge_Dim_Principals';
+    BEGIN TRY
+        DECLARE @InsertedCount INT = 0, @UpdatedCount INT = 0, @DeletedCount INT = 0, @ReactivatedCount INT = 0, @ExpiredCount INT = 0;
+
+        -- Type 1 UPDATE block (conditional - injected from Python)
+        -- Type 1: UPDATE changed attributes
+UPDATE d SET
+    d.[Principal_Name] = o.[Principal_Name], d.[Principal_Trading_As_Name] = o.[Principal_Trading_As_Name], d.[Principal_Province] = o.[Principal_Province], d.[Principal_Country] = o.[Principal_Country],
+    d.Updated_Datetime = GETDATE()
+FROM [DW].[Dim_Principals] d
+INNER JOIN [ODS].[Principals] o ON d.[Principal_Code] = o.[Principal_Code]
+WHERE (COALESCE(d.[Principal_Name], '') <> COALESCE(o.[Principal_Name], '') OR COALESCE(d.[Principal_Trading_As_Name], '') <> COALESCE(o.[Principal_Trading_As_Name], '') OR COALESCE(d.[Principal_Province], '') <> COALESCE(o.[Principal_Province], '') OR COALESCE(d.[Principal_Country], '') <> COALESCE(o.[Principal_Country], ''));
+SET @UpdatedCount = @@ROWCOUNT;
+
+
+        -- Type 2 change detected: Expire current row + INSERT new version
+        UPDATE d SET 
+            d.Row_Is_Current = 0,
+            d.Row_Expiry_Datetime = GETDATE(),
+            d.Updated_Datetime = GETDATE()
+        FROM [DW].[Dim_Principals] d
+        INNER JOIN [ODS].[Principals] o ON d.[Principal_Code] = o.[Principal_Code]
+        WHERE d.Row_Is_Current = 1
+          AND (COALESCE(d.[Principal_Address], '') <> COALESCE(o.[Principal_Address], '') OR COALESCE(d.[Principal_City], '') <> COALESCE(o.[Principal_City], ''));
+        SET @ExpiredCount = @@ROWCOUNT;
+
+        INSERT INTO [DW].[Dim_Principals] (
+            [Principal_Code], [Principal_Name], [Principal_Trading_As_Name], [Principal_Address], [Principal_City], [Principal_Province], [Principal_Country],
+            Row_Is_Current, Row_Effective_Datetime, Row_Expiry_Datetime,
+            Inserted_Datetime, Updated_Datetime,
+            Row_Change_Reason
+        )
+        SELECT 
+            o.[Principal_Code], o.[Principal_Name], o.[Principal_Trading_As_Name], o.[Principal_Address], o.[Principal_City], o.[Principal_Province], o.[Principal_Country],
+            1, GETDATE(), NULL,
+            GETDATE(), NULL,
+            'NEW'
+        FROM [ODS].[Principals] o
+        WHERE NOT EXISTS (
+            SELECT 1 FROM [DW].[Dim_Principals] d 
+            WHERE d.Principal_Code = o.Principal_Code AND d.Row_Is_Current = 1
+        );
+        SET @InsertedCount = @@ROWCOUNT;
+
+        -- SOFT-DELETE (current row only)
+        UPDATE d SET 
+            d.Is_Deleted = 1,
+            d.Row_Expiry_Datetime = GETDATE(),
+            d.Updated_Datetime = GETDATE(),
+            d.Row_Change_Reason = 'Soft Deleted'
+        FROM [DW].[Dim_Principals] d
+        LEFT JOIN [ODS].[Principals] o ON d.[Principal_Code] = o.[Principal_Code]
+        WHERE o.Principal_Code IS NULL 
+          AND d.Row_Is_Current = 1 
+          AND d.Is_Deleted = 0;
+        SET @DeletedCount = @@ROWCOUNT;
+
+        -- RE-ACTIVATE
+        UPDATE d SET 
+            d.Is_Deleted = 0,
+            d.Updated_Datetime = GETDATE(),
+            d.Row_Change_Reason = 'Reactivated'
+        FROM [DW].[Dim_Principals] d
+        INNER JOIN [ODS].[Principals] o ON d.[Principal_Code] = o.[Principal_Code]
+        WHERE d.Is_Deleted = 1;
+        SET @ReactivatedCount = @@ROWCOUNT;
+
+        -- Log counts to audit
+        UPDATE [ETL].[Fact_Audit_Source_Imports]
+        SET Inserted_Count = @InsertedCount,
+            Updated_Count = @UpdatedCount,
+            Deleted_Count = @DeletedCount,
+            Reactivated_Count = @ReactivatedCount
+        WHERE Audit_Source_Import_SK = @Audit_Source_Import_SK;
+    END TRY
+    BEGIN CATCH
+        DECLARE @ErrMsg NVARCHAR(MAX) = ERROR_MESSAGE(), @ErrNum INT = ERROR_NUMBER(),
+                @ErrState INT = ERROR_STATE(), @ErrLine INT = ERROR_LINE(), @ErrSev INT = ERROR_SEVERITY();
+        EXEC ETL.SP_Log_ETL_Error @Procedure_Name = @ProcName, @Error_Message = @ErrMsg,
+            @Error_Number = @ErrNum, @Error_State = @ErrState, @Error_Line = @ErrLine, @Error_Severity = @ErrSev,
+            @Source_Import_SK = @Source_Import_SK, @Audit_Source_Import_SK = @Audit_Source_Import_SK;
+        THROW;
+    END CATCH
+END;

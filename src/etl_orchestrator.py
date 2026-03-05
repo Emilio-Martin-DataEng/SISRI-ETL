@@ -35,14 +35,15 @@ def run_etl(sources=None, force_ddl=False):
     total_rows = 0
     for source_name in sources:
         try:
+            rows = process_source(source_name, force_ddl=force_ddl, audit_id=global_audit_id)
+            total_rows += rows
+
             # Skip if already processed today
             conn = get_connection()
             cursor = conn.cursor()
             cursor.execute("SELECT Last_Successful_Load_Datetime FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source_name)
             last_success = cursor.fetchone()
-            if last_success and last_success[0] and last_success[0].date() == datetime.now().date():
-                print(f"[SKIP] {source_name} already processed today")
-                continue
+
 
             rows = process_source(source_name, force_ddl=force_ddl, audit_id=global_audit_id)  # ← pass audit_id
             total_rows += rows

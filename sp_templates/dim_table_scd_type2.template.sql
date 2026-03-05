@@ -1,4 +1,4 @@
--- Safe regeneration template for {schema}.{table_name}
+-- Safe regeneration template for {schema}.{table_name} (SCD Type 2)
 -- Generated at {generated_time}
 
 -- Drop old backup if it exists (prevents rename conflict)
@@ -39,15 +39,18 @@ CREATE TABLE [{schema}].[{table_name}] (
 );
 GO
 
-
-
 -- Restore data with IDENTITY_INSERT to preserve SKs
 IF OBJECT_ID('{schema}.{table_name}_backup_{timestamp}', 'U') IS NOT NULL
 BEGIN
     SET IDENTITY_INSERT [{schema}].[{table_name}] ON;
     
-    INSERT INTO [{schema}].[{table_name}] ([{sk_col}], [Row_Is_Current], [Row_Effective_Datetime], [Row_Expiry_Datetime], [Inserted_Datetime], [Updated_Datetime], [Is_Deleted], [Row_Change_Reason], {insert_columns})
-    SELECT [{sk_col}],  [Row_Is_Current], [Row_Effective_Datetime], [Row_Expiry_Datetime], [Inserted_Datetime], [Updated_Datetime], [Is_Deleted], [Row_Change_Reason], {select_columns}
+    INSERT INTO [{schema}].[{table_name}] (
+        [{sk_col}], [Row_Is_Current], [Row_Effective_Datetime], [Row_Expiry_Datetime],
+        [Inserted_Datetime], [Updated_Datetime], [Is_Deleted], [Row_Change_Reason], {insert_columns}
+    )
+    SELECT 
+        [{sk_col}], 1, GETDATE(), NULL,
+        [Inserted_Datetime], [Updated_Datetime], [Is_Deleted], [Row_Change_Reason], {select_columns}
     FROM [{schema}].[{table_name}_backup_{timestamp}];
     
     SET IDENTITY_INSERT [{schema}].[{table_name}] OFF;

@@ -1,4 +1,4 @@
-# src/staging/source_import.py (full file with fix)
+# src/staging/source_import.py
 
 from pathlib import Path
 import pandas as pd
@@ -19,16 +19,17 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
             raise ValueError(f"No mapping columns found for source '{source_name}'")
 
         with open(fmt_path, 'w', encoding='utf-8') as f:
-            f.write("14.0\n")
+            f.write("14.0\n")  # BCP format version
             f.write(f"{len(rows) + 1}\n")  # +1 for Inserted_Datetime
 
             for i, row in enumerate(rows, 1):
                 target_col, data_type = row
-                length = 8000
+                length = 8000  # Safe max for all text
                 terminator = "\t" if i < len(rows) else "\r\n"
                 f.write(f"{i} SQLCHAR 0 {length} \"{terminator}\" {i} {target_col} SQL_Latin1_General_CP1_CI_AS\n")
 
-            f.write(f"{len(rows)+1} SQLCHAR 0 30 \"\\r\\n\" {len(rows)+1} Inserted_Datetime SQL_Latin1_General_CP1_CI_AS\n")
+            # Inserted_Datetime as last column
+            f.write(f"{len(rows)+1} SQLCHAR 0 30 \"\\r\\n\" {len(rows)+1} Inserted_Datetime ""\n")
 
         print(f"[BCP] Generated format file: {fmt_path}")
     finally:
@@ -56,7 +57,7 @@ def process_source(source_name: str, force_ddl: bool = False, audit_id: int = No
     logs_folder = get_config("system", "logs_folder", "logs")
 
     raw_dir = SYSTEM_BASE_PATH() / raw_folder
-    format_dir = SYSTEM_BASE_PATH() / format_subfolder
+    format_dir = SYSTEM_BASE_PATH() / get_config("system", "config_folder", "config") / get_config("system", "format_subfolder", "format")
     temp_dir = SYSTEM_BASE_PATH() / temp_folder
     logs_dir = SYSTEM_BASE_PATH() / logs_folder
     rejected_dir = SYSTEM_BASE_PATH() / "rejected"
@@ -80,7 +81,8 @@ def process_source(source_name: str, force_ddl: bool = False, audit_id: int = No
 
     # Generate/re-generate format if forced or missing
     fmt_path = format_dir / f"{source_name.lower()}.fmt"
-    if not fmt_path.exists() or force_ddl:
+
+    if force_ddl or not fmt_path.exists():
         print(f"{'Regenerating' if force_ddl else 'Generating'} format file for {source_name}...")
         generate_bcp_format_file(source_name, fmt_path)
 
@@ -125,6 +127,7 @@ def process_source(source_name: str, force_ddl: bool = False, audit_id: int = No
                     # Log duplicates to rejected file
                     with open(rejected_file, 'a', encoding='utf-8') as rf:
                         rf.write(f"--- Duplicates removed from {file_path.name} ---\n")
+                        # Simple log - improve later with row details
                         rf.write(f"{dup_count} duplicates on PK {pk_cols}\n\n")
 
             # Add Inserted_Datetime
@@ -162,7 +165,7 @@ def process_source(source_name: str, force_ddl: bool = False, audit_id: int = No
                     cursor.close()
                     conn.close()
 
-                rejected_count += 1
+                rejected_count += 1  # count files with rejects
 
             total_rows += len(df)
 

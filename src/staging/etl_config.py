@@ -87,19 +87,31 @@ def process_etl_config():
         temp_dir = SYSTEM_BASE_PATH() / get_config("system", "temp_folder", "temp")
         temp_dir.mkdir(exist_ok=True)
 
+                # ... after trimming and adding Inserted_Datetime ...
+
         imports_path = temp_dir / "source_imports_stg.txt"
         mapping_path = temp_dir / "source_file_mapping_stg.txt"
 
-        # Select only known columns (prevents trailing tabs from extra DF columns)
+        print(f"[DEBUG] Source_Imports rows before write: {len(df_imports)}")
+        print(f"[DEBUG] Source_Imports columns: {df_imports.columns.tolist()}")
+
+        df_imports.to_csv(imports_path, sep='\t', index=False, header=False, encoding='utf-8',
+                          lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
+        print(f"[DEBUG] Wrote Source_Imports temp file: {imports_path} ({imports_path.stat().st_size} bytes)")
+
+        # Select only known columns for mapping (prevents trailing tabs)
         known_cols = [
             'Source_Name', 'Source_Column', 'Target_Column',
-            'Data_Type', 'Description', 'Is_Type2_Attribute', 'Is_PK', 'Is_Required','Inserted_Datetime'
-            
+            'Data_Type', 'Description', 'Is_Type2_Attribute', 'Is_PK', 'Is_Required', 'Inserted_Datetime'
         ]
-        df_mapping = df_mapping[known_cols].fillna('')  # fill NaN with empty string
+        df_mapping = df_mapping[known_cols].fillna('')
 
-        df_mapping.to_csv(mapping_path, sep='\t', index=False, header=False, encoding='utf-8', lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
-        df_mapping.to_csv(mapping_path, sep='\t', index=False, header=False, encoding='utf-8', lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
+        print(f"[DEBUG] Mapping rows before write: {len(df_mapping)}")
+        print(f"[DEBUG] Mapping columns: {df_mapping.columns.tolist()}")
+
+        df_mapping.to_csv(mapping_path, sep='\t', index=False, header=False, encoding='utf-8',
+                          lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
+        print(f"[DEBUG] Wrote Mapping temp file: {mapping_path} ({mapping_path.stat().st_size} bytes)")
 
         db_cfg = get_db_config()
 
