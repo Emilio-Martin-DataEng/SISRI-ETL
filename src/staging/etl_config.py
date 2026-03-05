@@ -90,7 +90,15 @@ def process_etl_config():
         imports_path = temp_dir / "source_imports_stg.txt"
         mapping_path = temp_dir / "source_file_mapping_stg.txt"
 
-        df_imports.to_csv(imports_path, sep='\t', index=False, header=False, encoding='utf-8', lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
+        # Select only known columns (prevents trailing tabs from extra DF columns)
+        known_cols = [
+            'Source_Name', 'Source_Column', 'Target_Column',
+            'Data_Type', 'Description', 'Is_Type2_Attribute', 'Is_PK', 'Is_Required','Inserted_Datetime'
+            
+        ]
+        df_mapping = df_mapping[known_cols].fillna('')  # fill NaN with empty string
+
+        df_mapping.to_csv(mapping_path, sep='\t', index=False, header=False, encoding='utf-8', lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
         df_mapping.to_csv(mapping_path, sep='\t', index=False, header=False, encoding='utf-8', lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
 
         db_cfg = get_db_config()

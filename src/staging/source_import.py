@@ -118,6 +118,8 @@ def process_source(source_name: str, force_ddl: bool = False):
             try:
                 df = pd.read_excel(file, sheet_name=sheet_name, dtype=str)
                 df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
+                df = df.apply(lambda x: x.str.replace(r'[\n\r\t\\]', ' ', regex=True).str.strip() if x.dtype == "object" else x)
+                df = df.apply(lambda x: x.str.replace(r'\s+', ' ', regex=True).str.strip() if x.dtype == "object" else x)
                 file_rows = len(df)
                 dfs.append(df)
                 file_row_counts.append(file_rows)
@@ -151,14 +153,19 @@ def process_source(source_name: str, force_ddl: bool = False):
         truncate_table(table_name)
 
         db_cfg = get_db_config()
-        upload_via_bcp(
-            file_path=output_path,
-            table=table_name,
-            db_config=db_cfg,
-            format_file=str(fmt_path),  # Use the generated/existing path
-            first_row=1
-        )
-
+        try:
+            upload_via_bcp(
+                file_path=output_path,
+                table=table_name,
+                db_config=db_cfg,
+                format_file=str(fmt_path),  # Use the generated/existing path
+                first_row=1
+            )
+        except Exception as e:
+            print(f"[ERROR] BCP failed for {source_name}: {str(e)}")
+            with open(bcp_log, 'r') as f:
+                print(f"BCP log content:\n{f.read()}")
+            raise
         # Archive + lineage (your existing code)
         archive_base = BASE_PATH() / "archive" / datetime.now().strftime("%Y-%m")
         archive_dir = archive_base / source_name
