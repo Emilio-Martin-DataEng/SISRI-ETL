@@ -64,11 +64,16 @@ def process_etl_config():
 
         config_file = config_files[0]
         print(f"Loading config from: {config_file}")
-
         format_dir = config_folder / get_config("system", "format_subfolder", "format")
-        format_imports = format_dir / "source_imports.fmt"
-        format_mapping = format_dir / "source_file_mapping.fmt"
-        format_dir.mkdir(exist_ok=True)
+        format_system_dir = format_dir / "system"
+
+
+        format_imports = format_system_dir / "source_imports.fmt"
+        format_mapping = format_system_dir / "source_file_mapping.fmt"
+
+        # Ensure folders exist
+        format_system_dir.mkdir(parents=True, exist_ok=True)
+
 
         df_imports = pd.read_excel(config_file, sheet_name="Source_Imports", dtype=str)
         df_mapping = pd.read_excel(config_file, sheet_name="Source_File_Mapping", dtype=str)
