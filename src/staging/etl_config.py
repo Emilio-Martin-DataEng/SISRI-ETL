@@ -18,7 +18,7 @@ from src.utils.db_ops import (
     get_source_import_sk,
     get_connection
 )
-from src.utils.ddl_generator import generate_ods_table_ddl, generate_dw_table_ddl, generate_merge_proc_ddl
+from src.utils.ddl_generator import apply_ddl_from_run, generate_ods_table_ddl, generate_dw_table_ddl, generate_merge_proc_ddl
 
 def process_etl_config():
     start_time = datetime.now()
@@ -80,7 +80,7 @@ def process_etl_config():
         )
         df_imports = df_imports.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
 
-        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S.000')
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         df_imports['Inserted_Datetime'] = now_str
         df_mapping['Inserted_Datetime'] = now_str
 
@@ -164,6 +164,9 @@ def process_etl_config():
 
         cursor.close()
         conn.close()
+
+        # Auto-apply any scripts moved to run/ folder
+        apply_ddl_from_run()
 
         end_time = datetime.now()
         row_count = len(df_imports) + len(df_mapping)

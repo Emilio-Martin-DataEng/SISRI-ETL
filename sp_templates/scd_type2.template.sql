@@ -1,4 +1,4 @@
--- Merge proc for {dim_name} -> ETL.Dim_{dim_name} (SCD Type 2)
+-- Merge proc for {dim_name} -> {dw_table} (SCD Type 2)
 -- Generated at {generated_time}
 CREATE OR ALTER PROCEDURE [ETL].[SP_Merge_Dim_{dim_name}]
     @Source_Import_SK INT = NULL,
@@ -9,42 +9,37 @@ BEGIN
     SET XACT_ABORT ON;
     DECLARE @ProcName SYSNAME = N'ETL.SP_Merge_Dim_{dim_name}';
     BEGIN TRY
-        DECLARE @InsertedCount INT = 0, @UpdatedCount INT = 0, @DeletedCount INT = 0, @ReactivatedCount INT = 0;
+        DECLARE @InsertedCount INT = 0, @UpdatedCount INT = 0, @DeletedCount INT = 0, @ReactivatedCount INT = 0, @ExpiredCount INT = 0;
 
-        -- Type 1 attributes: UPDATE on current row only
-        UPDATE d SET
-            {type1_update_columns},
-            d.Updated_Datetime = GETDATE()
-        FROM {dw_table} d
-        INNER JOIN {ods_table} o ON {join_condition}
-        WHERE d.Row_Is_Current = 1
-          AND ({type1_where_changes});
-        SET @UpdatedCount = @@ROWCOUNT;
+        -- Type 1 UPDATE block (conditional - injected from Python)
+        {type1_update_block}
 
-        -- Type 2 change detected: Expire current row + INSERT new version with reason
+        -- Type 2 change detected: Expire current row + INSERT new version
         UPDATE d SET 
-            Row_Is_Current = 0,
-            Row_Expiry_Datetime = GETDATE(),
-            Updated_Datetime = GETDATE()
+            d.Row_Is_Current = 0,
+            d.Row_Expiry_Datetime = GETDATE(),
+            d.Updated_Datetime = GETDATE()
         FROM {dw_table} d
         INNER JOIN {ods_table} o ON {join_condition}
         WHERE d.Row_Is_Current = 1
           AND ({type2_where_changes});
         SET @ExpiredCount = @@ROWCOUNT;
 
-        INSERT INTO {dw_table} 
-            ([{key_column}], {insert_columns}, 
-             Row_Is_Current, Row_Effective_Datetime, Row_Expiry_Datetime,
-             Inserted_Datetime, Updated_Datetime,
-             Row_Change_Reason)
-        SELECT o.[{key_column}], {select_columns}, 
-               1, GETDATE(), NULL,
-               GETDATE(), NULL,
-               'NEW'
+        INSERT INTO {dw_table} (
+            {insert_columns},
+            Row_Is_Current, Row_Effective_Datetime, Row_Expiry_Datetime,
+            Inserted_Datetime, Updated_Datetime,
+            Row_Change_Reason
+        )
+        SELECT 
+            {select_columns},
+            1, GETDATE(), NULL,
+            GETDATE(), NULL,
+            'NEW'
         FROM {ods_table} o
         WHERE NOT EXISTS (
             SELECT 1 FROM {dw_table} d 
-            WHERE d.[{key_column}] = o.[{key_column}] AND d.Row_Is_Current = 1
+            WHERE d.{key_column} = o.{key_column} AND d.Row_Is_Current = 1
         );
         SET @InsertedCount = @@ROWCOUNT;
 

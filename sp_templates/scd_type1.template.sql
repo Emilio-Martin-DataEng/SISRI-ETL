@@ -1,4 +1,4 @@
--- Merge proc for {dim_name} -> ETL.Dim_{dim_name} (SCD Type 1)
+-- Merge proc for {dim_name} -> {dw_table} (SCD Type 1)
 -- Generated at {generated_time}
 CREATE OR ALTER PROCEDURE [ETL].[SP_Merge_Dim_{dim_name}]
     @Source_Import_SK INT = NULL,
@@ -11,9 +11,8 @@ BEGIN
     BEGIN TRY
         DECLARE @InsertedCount INT = 0, @UpdatedCount INT = 0, @DeletedCount INT = 0, @ReactivatedCount INT = 0;
 
-        -- Type 1: UPDATE changed attributes (only if there are Type 1 columns)
+        -- Type 1 UPDATE block (conditional - injected from Python)
         {type1_update_block}
-        SET @UpdatedCount = @@ROWCOUNT;
 
         -- INSERT new dimension rows
         INSERT INTO {dw_table} ({insert_columns}, [Inserted_Datetime], [Updated_Datetime], [Row_Change_Reason])

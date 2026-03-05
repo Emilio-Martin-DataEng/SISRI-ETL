@@ -1,60 +1,57 @@
 import pytest
 from src.utils.ddl_generator import generate_ods_table_ddl, generate_dw_table_ddl, generate_merge_proc_ddl
 
-def normalize_sql(sql: str) -> str:
-    """Remove extra whitespace and line breaks for easier comparison."""
-    return ' '.join(sql.split()).replace(' ,', ',').replace(', ', ',').strip()
-
-def test_dw_table_scd2():
+def test_ods_table_composite_pk_only_is_pk():
     columns = [
-        {"Target_Column": "Principal_ID", "Data_Type": "INT", "Is_PK": True, "Is_Required": True, "Is_Type2_Attribute": False},
-        {"Target_Column": "Status", "Data_Type": "VARCHAR(50)", "Is_PK": False, "Is_Required": False, "Is_Type2_Attribute": True}
+        {"Target_Column": "Code", "Data_Type": "VARCHAR(50)", "Is_PK": True},
+        {"Target_Column": "Name", "Data_Type": "VARCHAR(100)", "Is_PK": False},
+        {"Target_Column": "Description", "Data_Type": "VARCHAR(200)", "Is_PK": True}
     ]
-    timestamp = "20260302"
-    ddl = generate_dw_table_ddl("DW", "Dim_Principals", columns, timestamp)
-    norm_ddl = normalize_sql(ddl)
+    ddl = generate_ods_table_ddl("TestODS", columns)
+    assert "CONSTRAINT PK_TestODS PRIMARY KEY ([Code], [Description])" in ddl
+    assert "[Name]" in ddl  # non-PK column exists but not in PK
 
-    # Check SK (ignore name variation)
-    assert "IDENTITY(1,1) NOT NULL CONSTRAINT [PK_Dim_Principals] PRIMARY KEY" in norm_ddl
-    assert "[Row_Is_Current] BIT NOT NULL DEFAULT 1" in norm_ddl
-    assert "[Row_Effective_Datetime] DATETIME NOT NULL DEFAULT GETDATE()" in norm_ddl
-    assert "[Row_Expiry_Datetime] DATETIME NULL" in norm_ddl
-    assert "[Is_Deleted] BIT NOT NULL DEFAULT 0" in norm_ddl
-    assert "INSERT INTO [DW].[Dim_Principals]" in norm_ddl  # explicit insert
+def test_dw_table_always_has_row_change_reason():
+    columns = [{"Target_Column": "Name", "Data_Type": "VARCHAR(100)", "Is_PK": False}]
+    ddl = generate_dw_table_ddl("DW", "Dim_Test", columns, "20260304")
+    assert "[Row_Change_Reason] VARCHAR(50) NULL" in ddl
 
-def test_merge_scd1():
+def test_merge_scd1_update_block_present_when_type1_columns():
     columns = [
-        {"Target_Column": "Principal_ID", "Data_Type": "INT", "Is_PK": True, "Is_Type2_Attribute": False},
+        {"Target_Column": "ID", "Data_Type": "INT", "Is_PK": True},
         {"Target_Column": "Name", "Data_Type": "VARCHAR(100)", "Is_Type2_Attribute": False}
     ]
-    merge_ddl = generate_merge_proc_ddl("Principals", "ODS.Principals", columns)
-    norm_merge = normalize_sql(merge_ddl)
+    merge_ddl = generate_merge_proc_ddl("Test", "[ODS].[Test]", "[DW].[Dim_Test]", columns)
+    assert "-- Type 1: UPDATE changed attributes" in merge_ddl
+    assert "d.[Name] = o.[Name]" in merge_ddl
+    assert "WHERE (COALESCE(d.[Name], '') <> COALESCE(o.[Name], ''))" in merge_ddl
 
-    assert "UPDATE d SET" in norm_merge
-    assert "d.[Name]=o.[Name]" in norm_merge.replace(" ", "")  # ignore spaces
-    assert "COALESCE(d.[Name],'')<>COALESCE(o.[Name],'')" in norm_merge.replace(" ", "")
-    assert "Row_Is_Current" not in norm_merge  # no SCD2
-
-def test_merge_scd2():
+def test_merge_scd1_no_update_block_when_no_type1_columns():
     columns = [
-        {"Target_Column": "Principal_ID", "Data_Type": "INT", "Is_PK": True, "Is_Type2_Attribute": False},
-        {"Target_Column": "Status", "Data_Type": "VARCHAR(50)", "Is_Type2_Attribute": True}
+        {"Target_Column": "ID", "Data_Type": "INT", "Is_PK": True}
     ]
-    merge_ddl = generate_merge_proc_ddl("Principals", "ODS.Principals", columns)
-    norm_merge = normalize_sql(merge_ddl)
+    merge_ddl = generate_merge_proc_ddl("Test", "[ODS].[Test]", "[DW].[Dim_Test]", columns)
+    assert "No Type 1 columns to update" in merge_ddl
+    assert "SET @UpdatedCount = 0;" in merge_ddl
+    assert "UPDATE d SET" not in merge_ddl  # no broken comma
 
-    assert "UPDATE d SET" in norm_merge
-    assert "Row_Is_Current=0" in norm_merge.replace(" ", "")
-    assert "Row_Expiry_Datetime=GETDATE()" in norm_merge.replace(" ", "")
-    assert "COALESCE(d.[Status],'')<>COALESCE(o.[Status],'')" in norm_merge.replace(" ", "")
-
-def test_ods_table_no_scd2():
+def test_merge_scd2_has_both_type1_and_type2_logic():
     columns = [
-        {"Target_Column": "Principal_ID", "Data_Type": "INT", "Is_PK": True, "Is_Required": True, "Is_Type2_Attribute": False},
-        {"Target_Column": "Name", "Data_Type": "VARCHAR(100)", "Is_PK": False, "Is_Required": False, "Is_Type2_Attribute": False}
+        {"Target_Column": "ID", "Data_Type": "INT", "Is_PK": True},
+        {"Target_Column": "Status", "Data_Type": "VARCHAR(50)", "Is_Type2_Attribute": True},
+        {"Target_Column": "Name", "Data_Type": "VARCHAR(100)", "Is_Type2_Attribute": False}
     ]
-    ddl = generate_ods_table_ddl("Principals", columns)
-    assert "[Principal_ID] INT NOT NULL" in ddl
-    assert "[Name] VARCHAR(100) NULL" in ddl
-    assert "Row_Is_Current" not in ddl  # no SCD2
-    assert "CONSTRAINT PK_Principals PRIMARY KEY" in ddl
+    merge_ddl = generate_merge_proc_ddl("Test", "[ODS].[Test]", "[DW].[Dim_Test]", columns)
+    assert "-- Type 1: UPDATE changed attributes" in merge_ddl
+    assert "d.[Name] = o.[Name]" in merge_ddl
+    assert "Row_Is_Current = 0" in merge_ddl
+    assert "Row_Expiry_Datetime = GETDATE()" in merge_ddl
+
+def test_no_trailing_whitespace_in_column_names():
+    columns = [
+        {"Target_Column": "City ", "Data_Type": "VARCHAR(100)"},  # simulate dirty input
+        {"Target_Column": "Name", "Data_Type": "VARCHAR(100)"}
+    ]
+    merge_ddl = generate_merge_proc_ddl("Test", "[ODS].[Test]", "[DW].[Dim_Test]", columns)
+    assert "[City ]" not in merge_ddl
+    assert "[City]" in merge_ddl

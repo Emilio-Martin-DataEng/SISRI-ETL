@@ -20,7 +20,7 @@ from src.utils.db_ops import (
 
 CONFIG_SOURCES = {"Source_Imports", "Source_File_Mapping"}
 
-def process_source(source_name: str):
+def process_source(source_name: str, force_ddl: bool = False):
     if source_name in CONFIG_SOURCES:
         print(f"[SKIP] {source_name} is config/metadata - not processed here.")
         return 0
@@ -106,9 +106,8 @@ def process_source(source_name: str):
         # NEW: Generate format file for this source if missing
         format_dir = SYSTEM_BASE_PATH() / get_config("system", "config_folder", "config") / get_config("system", "format_subfolder", "format")
         fmt_path = format_dir / f"{source_name.lower()}.fmt"
-
-        if not fmt_path.exists():
-            print(f"[BCP] Generating format file for {source_name}...")
+        if not fmt_path.exists() or force_ddl:
+            print(f"{'Regenerating' if force_ddl else 'Generating'} format file for {source_name}...")
             generate_bcp_format_file(source_name, fmt_path)
         else:
             print(f"[BCP] Using existing format file: {fmt_path}")

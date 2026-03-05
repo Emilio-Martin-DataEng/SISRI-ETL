@@ -76,6 +76,10 @@ def run_etl(sources=None, force_ddl=False):
             print("Stopping execution. Restart from failed source.")
             break
 
+    # Apply any pending DDL from run/ folder
+    print("Applying any pending DDL scripts from run/ folder...")
+    apply_ddl_from_run()
+
     end_time = datetime.now()
     log_audit_source_import(
         global_audit_id,

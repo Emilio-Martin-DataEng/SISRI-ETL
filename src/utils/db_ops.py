@@ -258,7 +258,7 @@ def generate_bcp_format_file(source_name: str, fmt_path: str | Path):
 
             # Map Data_Type to BCP type
             data_type_upper = col['Data_Type'].upper()
-            if any(t in data_type_upper for t in ['VARCHAR', 'CHAR', 'TEXT', 'NVARCHAR', 'NCHAR']):
+            if any(t in data_type_upper for t in ['VARCHAR', 'CHAR', 'TEXT', 'NVARCHAR', 'NCHAR'] or col['Target_Column'] == "Inserted_Datetime"):
                 bcp_type = "SQLCHAR"
             elif 'INT' in data_type_upper:
                 bcp_type = "SQLINT"
@@ -272,6 +272,7 @@ def generate_bcp_format_file(source_name: str, fmt_path: str | Path):
                 bcp_type = "SQLCHAR"  # safe fallback
 
             length = 30 if col['Target_Column'] == "Inserted_Datetime" else 500
+ 
 
             line = (
                 f"{idx}\t"
