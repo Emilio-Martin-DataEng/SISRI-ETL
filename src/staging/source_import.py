@@ -55,13 +55,36 @@ def process_source(source_name: str, force_ddl: bool = False, audit_id: int = No
     format_subfolder = get_config("system", "format_subfolder", "config/format")
     temp_folder = get_config("system", "temp_folder", "temp")
     logs_folder = get_config("system", "logs_folder", "logs")
+    # Get absolute root from YAML
+    file_root = get_config("base", "file_root", "C:/SISRI")  # fallback to default
+    
+    # Get absolute root from YAML
+    file_root = get_config("base", "file_root", "C:/SISRI")  # fallback to default
+
+    # rel_path from Source_Imports (e.g. "raw/MDM" or "raw/MDM/Places")
+    rel_path = source_row['Rel_Path'].strip().lstrip('/\\')  # clean leading/trailing slashes
+
+    # Full absolute path for data files
+    data_dir = Path(file_root) / rel_path
+
+    print(f"[DEBUG] Using absolute data root: {file_root}")
+    print(f"[DEBUG] Relative path from Source_Imports: {rel_path}")
+    print(f"[DEBUG] Full data directory: {data_dir}")
 
     raw_dir = SYSTEM_BASE_PATH() / raw_folder
     format_dir = SYSTEM_BASE_PATH() / get_config("system", "config_folder", "config") / get_config("system", "format_subfolder", "format")
+    format_sources_dir = format_dir / "sources"
     temp_dir = SYSTEM_BASE_PATH() / temp_folder
     logs_dir = SYSTEM_BASE_PATH() / logs_folder
     rejected_dir = SYSTEM_BASE_PATH() / "rejected"
     rejected_dir.mkdir(exist_ok=True)
+
+    # Get source metadata from config Excel
+    source_config = pd.read_excel(SYSTEM_BASE_PATH() / "config/ETL_Config.xlsx", sheet_name="Source_Imports")
+    source_row = source_config[source_config['Source_Name'] == source_name]
+    if source_row.empty:
+        raise ValueError(f"No Source_Imports row found for {source_name}")
+    source_row = source_row.iloc[0]
 
     format_dir.mkdir(exist_ok=True)
     temp_dir.mkdir(exist_ok=True)
@@ -80,7 +103,7 @@ def process_source(source_name: str, force_ddl: bool = False, audit_id: int = No
         raise ValueError(f"No Staging_Table found for {source_name}")
 
     # Generate/re-generate format if forced or missing
-    fmt_path = format_dir / f"{source_name.lower()}.fmt"
+    fmt_path = format_sources_dir / f"{source_name.lower()}.fmt"
 
     if force_ddl or not fmt_path.exists():
         print(f"{'Regenerating' if force_ddl else 'Generating'} format file for {source_name}...")
@@ -89,9 +112,16 @@ def process_source(source_name: str, force_ddl: bool = False, audit_id: int = No
     # Find source files
     source_config = pd.read_excel(SYSTEM_BASE_PATH() / "config/ETL_Config.xlsx", sheet_name="Source_Imports")
     source_row = source_config[source_config['Source_Name'] == source_name].iloc[0]
-    rel_path = source_row['Rel_Path']
-    pattern = source_row['Pattern'] or "*.*"
+    # Now use source_row safely
+    rel_path = source_row['Rel_Path'].strip().lstrip('/\\')
+    pattern = source_row['Pattern'] or "*.xlsx"
     sheet_name = source_row['Sheet_Name'] or "Sheet1"
+
+    # Debug prints
+    print(f"[DEBUG] Source: {source_name}")
+    print(f"[DEBUG] Rel_Path: {rel_path}")
+    print(f"[DEBUG] Pattern: {pattern}")
+    print(f"[DEBUG] Sheet_Name: {sheet_name}")
 
     files = list((SYSTEM_BASE_PATH() / rel_path).glob(pattern))
     if not files:
@@ -106,6 +136,21 @@ def process_source(source_name: str, force_ddl: bool = False, audit_id: int = No
         rf.write(f"Rejected rows for {source_name} - {datetime.now()}\n\n")
 
     pk_cols = get_source_pk_columns(source_name)
+
+    pattern = source_row['Pattern'] or "*.xlsx"  # default to all Excel files
+
+    print(f"[DEBUG] Searching with pattern: {pattern}")
+
+    files = list(data_dir.glob(pattern))
+    if not files:
+        print(f"[WARNING] No files found in {data_dir} with pattern {pattern}")
+        # Fallback to *.xlsx if pattern was too specific
+        files = list(data_dir.glob("*.xlsx"))
+        if not files:
+            print(f"[ERROR] No .xlsx files found in {data_dir} - check Rel_Path and file_root in config")
+            return 0
+
+    print(f"[DEBUG] Found {len(files)} files:")
 
     for file_path in files:
         print(f"[PROCESSING] {file_path.name}")
