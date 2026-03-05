@@ -1,0 +1,20 @@
+14.0
+17
+1 SQLCHAR 0 8000 "	" 1 Place_Code SQL_Latin1_General_CP1_CI_AS
+2 SQLCHAR 0 8000 "	" 2 Place_Name SQL_Latin1_General_CP1_CI_AS
+3 SQLCHAR 0 8000 "	" 3 Place_Category SQL_Latin1_General_CP1_CI_AS
+4 SQLCHAR 0 8000 "	" 4 Place_Sub_Category SQL_Latin1_General_CP1_CI_AS
+5 SQLCHAR 0 8000 "	" 5 Place_Chain SQL_Latin1_General_CP1_CI_AS
+6 SQLCHAR 0 8000 "	" 6 Place_Address SQL_Latin1_General_CP1_CI_AS
+7 SQLCHAR 0 8000 "	" 7 Place_City SQL_Latin1_General_CP1_CI_AS
+8 SQLCHAR 0 8000 "	" 8 Place_Province SQL_Latin1_General_CP1_CI_AS
+9 SQLCHAR 0 8000 "	" 9 Place_Country SQL_Latin1_General_CP1_CI_AS
+10 SQLCHAR 0 8000 "	" 10 Place_Latitude SQL_Latin1_General_CP1_CI_AS
+11 SQLCHAR 0 8000 "	" 11 Place_Longitude SQL_Latin1_General_CP1_CI_AS
+12 SQLCHAR 0 8000 "	" 12 Place_Contact_Number SQL_Latin1_General_CP1_CI_AS
+13 SQLCHAR 0 8000 "	" 13 Place_Contact_Name SQL_Latin1_General_CP1_CI_AS
+14 SQLCHAR 0 8000 "	" 14 Place_Contact_Title SQL_Latin1_General_CP1_CI_AS
+15 SQLCHAR 0 8000 "	" 15 Place_Contact_Email SQL_Latin1_General_CP1_CI_AS
+16 SQLCHAR 0 8000 "
+" 16 Place_Website SQL_Latin1_General_CP1_CI_AS
+17 SQLCHAR 0 30 "\r\n" 17 Inserted_Datetime SQL_Latin1_General_CP1_CI_AS

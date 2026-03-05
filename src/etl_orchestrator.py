@@ -1,5 +1,7 @@
-import argparse
+# src/etl_orchestrator.py (full file with audit_id pass)
+
 from datetime import datetime
+import argparse
 
 from src.staging.etl_config import process_etl_config
 from src.staging.source_import import process_source
@@ -42,10 +44,10 @@ def run_etl(sources=None, force_ddl=False):
                 print(f"[SKIP] {source_name} already processed today")
                 continue
 
-            rows = process_source(source_name, force_ddl=force_ddl)
+            rows = process_source(source_name, force_ddl=force_ddl, audit_id=global_audit_id)  # ← pass audit_id
             total_rows += rows
 
-            # Phase 2: Run merge
+            # Phase 2: Run merge proc
             cursor.execute("SELECT Merge_Proc_Name FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source_name)
             merge_proc_row = cursor.fetchone()
             merge_proc_name = merge_proc_row[0] if merge_proc_row and merge_proc_row[0] else f"ETL.SP_Merge_Dim_{source_name}"
@@ -76,7 +78,7 @@ def run_etl(sources=None, force_ddl=False):
             print("Stopping execution. Restart from failed source.")
             break
 
-    # Apply any pending DDL from run/ folder
+    # Apply DDL after all sources (even if some failed)
     print("Applying any pending DDL scripts from run/ folder...")
     apply_ddl_from_run()
 
@@ -97,19 +99,9 @@ def run_etl(sources=None, force_ddl=False):
     print(f"Processed sources: {sources}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="SISRI ETL Orchestrator\n\n"
-                    "Runs full ETL: config refresh → source loads (ODS) → dimension merges (DW).\n"
-                    "Options:\n"
-                    "  --sources Principals Brands     Run only these sources\n"
-                    "  --force-ddl                     Force DDL regeneration for all sources\n"
-                    "  --help                          Show this help",
-        formatter_class=argparse.RawTextHelpFormatter
-    )
+    parser = argparse.ArgumentParser(description="SISRI ETL Orchestrator")
     parser.add_argument("--sources", nargs="+", default=None, help="Specific sources to process")
     parser.add_argument("--force-ddl", action="store_true", help="Force DDL generation")
     args = parser.parse_args()
 
     run_etl(args.sources, args.force_ddl)
-    # After all sources
-    apply_ddl_from_run()

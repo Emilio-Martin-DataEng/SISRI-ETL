@@ -1,66 +1,66 @@
-Principals	Principal Code	Principal_Code	VARCHAR(500)	Primary key	0	1	1	2026-03-05 11:55:48
-Principals	Principal Name	Principal_Name	VARCHAR(500)	Display name	0	0	1	2026-03-05 11:55:48
-Principals	Trading as Name	Principal_Trading_As_Name	VARCHAR(500)	Trading name	0	0	0	2026-03-05 11:55:48
-Principals	Principal Address	Principal_Address	VARCHAR(500)	Address	1	0	0	2026-03-05 11:55:48
-Principals	Principal City	Principal_City	VARCHAR(500)	City	1	0	0	2026-03-05 11:55:48
-Principals	Principal Province	Principal_Province	VARCHAR(500)	Province	0	0	0	2026-03-05 11:55:48
-Principals	Principal Country	Principal_Country	VARCHAR(500)	Country	0	0	0	2026-03-05 11:55:48
-Source_Imports	Source_Name	Source_Name	VARCHAR(500)	Primary key	0	1	1	2026-03-05 11:55:48
-Source_Imports	Rel_Path	Rel_Path	VARCHAR(500)	Relative path from root	1	0	1	2026-03-05 11:55:48
-Source_Imports	Pattern	Pattern	VARCHAR(500)	File name search pattern	1	0	1	2026-03-05 11:55:48
-Source_Imports	Sheet_Name	Sheet_Name	VARCHAR(500)	Spreadsheet name	1	0	0	2026-03-05 11:55:48
-Source_Imports	Staging_Table	Staging_Table	VARCHAR(500)	Two part staging table name	1	0	1	2026-03-05 11:55:48
-Source_Imports	Processing_Order	Processing_Order	VARCHAR(500)	Order the source files should be processed in	1	0	0	2026-03-05 11:55:48
-Source_Imports	Is_Active	Is_Active	bit	Active Indicator	0	0	1	2026-03-05 11:55:48
-Source_Imports	Description	Description	VARCHAR(500)	Description of file contents	0	0	0	2026-03-05 11:55:48
-Source_Imports	DW_Table_Name	DW_Table_Name	VARCHAR(500)	Target Data Warehouse Dimension or fact name	0	0	1	2026-03-05 11:55:48
-Source_Imports	Merge_Proc_Name	Merge_Proc_Name	VARCHAR(500)	ETL Phase 2 Stored Procedure	1	0	1	2026-03-05 11:55:48
-Source_File_Mapping	Source_Name	Source_Name	VARCHAR(500)	Source_Imports source name	0	1	1	2026-03-05 11:55:48
-Source_File_Mapping	Source_Column	Source_Column	VARCHAR(500)	Spreadsheet column name	0	1	1	2026-03-05 11:55:48
-Source_File_Mapping	Target_Column	Target_Column	VARCHAR(500)	Database table name	0	0	1	2026-03-05 11:55:48
-Source_File_Mapping	Data_Type	Data_Type	VARCHAR(500)	Database datatype	0	0	1	2026-03-05 11:55:48
-Source_File_Mapping	Description	Description	VARCHAR(500)	Column Description	0	0	0	2026-03-05 11:55:48
-Source_File_Mapping	Is_Type2_Attribute	Is_Type2_Attribute	bit	SCD Type 2 Field	0	0	1	2026-03-05 11:55:48
-Source_File_Mapping	Is_PK	Is_PK	bit	Is the column part of the PK	0	0	1	2026-03-05 11:55:48
-Source_File_Mapping	Is_Required	Is_Required	bit	Is the column nullable	0	0	1	2026-03-05 11:55:48
-Brands	Principal Code	Principal_Code	VARCHAR(500)	Primary key	0	1	1	2026-03-05 11:55:48
-Brands	Brand code	Brand_Code	VARCHAR(500)	Primary key	0	1	1	2026-03-05 11:55:48
-Brands	Brand Name	Brand_Name	VARCHAR(500)	Name	0	0	1	2026-03-05 11:55:48
-Wholesalers	Wholesaler Code	Wholesaler_Code	VARCHAR(255)	Primary key	0	1	1	2026-03-05 11:55:48
-Wholesalers	Wholesaler Name	Wholesaler_Name	VARCHAR(255)	Name	0	0	1	2026-03-05 11:55:48
-Wholesalers	Wholesaler Address	Wholesaler_Address	VARCHAR(255)	Address	0	0	0	2026-03-05 11:55:48
-Wholesalers	Wholesaler City	Wholesaler_City	VARCHAR(255)	City	0	0	0	2026-03-05 11:55:48
-Wholesalers	Wholesaler Province	Wholesaler_Province	VARCHAR(255)	Province	0	0	0	2026-03-05 11:55:48
-Wholesalers	Wholesaler Country	Wholesaler_Country	VARCHAR(255)	Country	0	0	0	2026-03-05 11:55:48
-Products	Product code	Product_Code	VARCHAR(255)		0	1	1	2026-03-05 11:55:48
-Products	Product Name	Product_Name	VARCHAR(255)		0	0	1	2026-03-05 11:55:48
-Products	Product Barcode	Product_Barcode	VARCHAR(255)		0	0	1	2026-03-05 11:55:48
-Products	Principal ID	Principal_Code	VARCHAR(255)		0	0	1	2026-03-05 11:55:48
-Products	Brand ID	Brand_Code	VARCHAR(255)		0	0	1	2026-03-05 11:55:48
-Products	Product Department	Product_Department	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Products	Product Category	Product_Category	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Products	Product Segment	Product_Segment	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Products	Product Sub-segment	Product_Sub_Segment	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Products	Product Packaging type	Product_Packaging_Type	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Products	Units of measure	Unit_Of_Measure	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Products	Product Volume	Product_Volume	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Products	Product Variant	Product_Variant	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Products	Product Case size	Product_Case_Size	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Products	Product Nappi code	Product_Nappi_Code	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Products	Product Schedule	Product_Schedule	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Places	Place code	Place_Code	VARCHAR(255)		0	1	1	2026-03-05 11:55:48
-Places	Place Name	Place_Name	VARCHAR(255)	Name	0	0	1	2026-03-05 11:55:48
-Places	Place Category	Place_Category	VARCHAR(255)	Category	1	0	0	2026-03-05 11:55:48
-Places	Place Sub-category	Place_Sub_Category	VARCHAR(255)	Sub-category	1	0	0	2026-03-05 11:55:48
-Places	Place Chain	Place_Chain	VARCHAR(255)	Chain	0	0	0	2026-03-05 11:55:48
-Places	Place Address	Place_Address	VARCHAR(255)	Address	0	0	0	2026-03-05 11:55:48
-Places	Place City	Place_City	VARCHAR(255)	City	0	0	0	2026-03-05 11:55:48
-Places	Place Province	Place_Province	VARCHAR(255)	Province	0	0	0	2026-03-05 11:55:48
-Places	Place Country	Place_Country	VARCHAR(255)	Country	0	0	0	2026-03-05 11:55:48
-Places	Place Latitude	Place_Latitude	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Places	Place Longitude	Place_Longitude	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Places	Place Contact Number	Place_Contact_Number	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Places	Place Contact Name	Place_Contact_Name	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Places	Place Contact Title	Place_Contact_Title	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Places	Place Contact Email	Place_Contact_Email	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
-Places	Place Website	Place_Website	VARCHAR(255)		0	0	0	2026-03-05 11:55:48
+Principals	Principal Code	Principal_Code	VARCHAR(500)	Primary key	0	1	1	2026-03-05 13:21:40
+Principals	Principal Name	Principal_Name	VARCHAR(500)	Display name	0	0	1	2026-03-05 13:21:40
+Principals	Trading as Name	Principal_Trading_As_Name	VARCHAR(500)	Trading name	0	0	0	2026-03-05 13:21:40
+Principals	Principal Address	Principal_Address	VARCHAR(500)	Address	1	0	0	2026-03-05 13:21:40
+Principals	Principal City	Principal_City	VARCHAR(500)	City	1	0	0	2026-03-05 13:21:40
+Principals	Principal Province	Principal_Province	VARCHAR(500)	Province	0	0	0	2026-03-05 13:21:40
+Principals	Principal Country	Principal_Country	VARCHAR(500)	Country	0	0	0	2026-03-05 13:21:40
+Source_Imports	Source_Name	Source_Name	VARCHAR(500)	Primary key	0	1	1	2026-03-05 13:21:40
+Source_Imports	Rel_Path	Rel_Path	VARCHAR(500)	Relative path from root	1	0	1	2026-03-05 13:21:40
+Source_Imports	Pattern	Pattern	VARCHAR(500)	File name search pattern	1	0	1	2026-03-05 13:21:40
+Source_Imports	Sheet_Name	Sheet_Name	VARCHAR(500)	Spreadsheet name	1	0	0	2026-03-05 13:21:40
+Source_Imports	Staging_Table	Staging_Table	VARCHAR(500)	Two part staging table name	1	0	1	2026-03-05 13:21:40
+Source_Imports	Processing_Order	Processing_Order	VARCHAR(500)	Order the source files should be processed in	1	0	0	2026-03-05 13:21:40
+Source_Imports	Is_Active	Is_Active	bit	Active Indicator	0	0	1	2026-03-05 13:21:40
+Source_Imports	Description	Description	VARCHAR(500)	Description of file contents	0	0	0	2026-03-05 13:21:40
+Source_Imports	DW_Table_Name	DW_Table_Name	VARCHAR(500)	Target Data Warehouse Dimension or fact name	0	0	1	2026-03-05 13:21:40
+Source_Imports	Merge_Proc_Name	Merge_Proc_Name	VARCHAR(500)	ETL Phase 2 Stored Procedure	1	0	1	2026-03-05 13:21:40
+Source_File_Mapping	Source_Name	Source_Name	VARCHAR(500)	Source_Imports source name	0	1	1	2026-03-05 13:21:40
+Source_File_Mapping	Source_Column	Source_Column	VARCHAR(500)	Spreadsheet column name	0	1	1	2026-03-05 13:21:40
+Source_File_Mapping	Target_Column	Target_Column	VARCHAR(500)	Database table name	0	0	1	2026-03-05 13:21:40
+Source_File_Mapping	Data_Type	Data_Type	VARCHAR(500)	Database datatype	0	0	1	2026-03-05 13:21:40
+Source_File_Mapping	Description	Description	VARCHAR(500)	Column Description	0	0	0	2026-03-05 13:21:40
+Source_File_Mapping	Is_Type2_Attribute	Is_Type2_Attribute	bit	SCD Type 2 Field	0	0	1	2026-03-05 13:21:40
+Source_File_Mapping	Is_PK	Is_PK	bit	Is the column part of the PK	0	0	1	2026-03-05 13:21:40
+Source_File_Mapping	Is_Required	Is_Required	bit	Is the column nullable	0	0	1	2026-03-05 13:21:40
+Brands	Principal Code	Principal_Code	VARCHAR(500)	Primary key	0	1	1	2026-03-05 13:21:40
+Brands	Brand code	Brand_Code	VARCHAR(500)	Primary key	0	1	1	2026-03-05 13:21:40
+Brands	Brand Name	Brand_Name	VARCHAR(500)	Name	0	0	1	2026-03-05 13:21:40
+Wholesalers	Wholesaler Code	Wholesaler_Code	VARCHAR(255)	Primary key	0	1	1	2026-03-05 13:21:40
+Wholesalers	Wholesaler Name	Wholesaler_Name	VARCHAR(255)	Name	0	0	1	2026-03-05 13:21:40
+Wholesalers	Wholesaler Address	Wholesaler_Address	VARCHAR(255)	Address	0	0	0	2026-03-05 13:21:40
+Wholesalers	Wholesaler City	Wholesaler_City	VARCHAR(255)	City	0	0	0	2026-03-05 13:21:40
+Wholesalers	Wholesaler Province	Wholesaler_Province	VARCHAR(255)	Province	0	0	0	2026-03-05 13:21:40
+Wholesalers	Wholesaler Country	Wholesaler_Country	VARCHAR(255)	Country	0	0	0	2026-03-05 13:21:40
+Products	Product code	Product_Code	VARCHAR(255)		0	1	1	2026-03-05 13:21:40
+Products	Product Name	Product_Name	VARCHAR(255)		0	0	1	2026-03-05 13:21:40
+Products	Product Barcode	Product_Barcode	VARCHAR(255)		0	0	1	2026-03-05 13:21:40
+Products	Principal ID	Principal_Code	VARCHAR(255)		0	0	1	2026-03-05 13:21:40
+Products	Brand ID	Brand_Code	VARCHAR(255)		0	0	1	2026-03-05 13:21:40
+Products	Product Department	Product_Department	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Products	Product Category	Product_Category	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Products	Product Segment	Product_Segment	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Products	Product Sub-segment	Product_Sub_Segment	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Products	Product Packaging type	Product_Packaging_Type	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Products	Units of measure	Unit_Of_Measure	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Products	Product Volume	Product_Volume	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Products	Product Variant	Product_Variant	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Products	Product Case size	Product_Case_Size	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Products	Product Nappi code	Product_Nappi_Code	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Products	Product Schedule	Product_Schedule	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Places	Place code	Place_Code	VARCHAR(255)		0	1	1	2026-03-05 13:21:40
+Places	Place Name	Place_Name	VARCHAR(255)	Name	0	0	1	2026-03-05 13:21:40
+Places	Place Category	Place_Category	VARCHAR(255)	Category	1	0	0	2026-03-05 13:21:40
+Places	Place Sub-category	Place_Sub_Category	VARCHAR(255)	Sub-category	1	0	0	2026-03-05 13:21:40
+Places	Place Chain	Place_Chain	VARCHAR(255)	Chain	0	0	0	2026-03-05 13:21:40
+Places	Place Address	Place_Address	VARCHAR(255)	Address	0	0	0	2026-03-05 13:21:40
+Places	Place City	Place_City	VARCHAR(255)	City	0	0	0	2026-03-05 13:21:40
+Places	Place Province	Place_Province	VARCHAR(255)	Province	0	0	0	2026-03-05 13:21:40
+Places	Place Country	Place_Country	VARCHAR(255)	Country	0	0	0	2026-03-05 13:21:40
+Places	Place Latitude	Place_Latitude	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Places	Place Longitude	Place_Longitude	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Places	Place Contact Number	Place_Contact_Number	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Places	Place Contact Name	Place_Contact_Name	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Places	Place Contact Title	Place_Contact_Title	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Places	Place Contact Email	Place_Contact_Email	VARCHAR(255)		0	0	0	2026-03-05 13:21:40
+Places	Place Website	Place_Website	VARCHAR(255)		0	0	0	2026-03-05 13:21:40

@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src.config import SYSTEM_BASE_PATH
-from src.utils.db_ops import execute_proc, get_connection
+from src.utils.db_ops import get_connection, log_audit_source_import, get_next_audit_import_id, execute_proc
 
 def generate_ods_table_ddl(source_name: str, columns: list[dict]) -> str:
     column_defs = []
@@ -20,7 +20,7 @@ def generate_ods_table_ddl(source_name: str, columns: list[dict]) -> str:
 
     pk_clause = ""
     if pk_cols:
-        pk_clause = f", CONSTRAINT PK_{source_name} PRIMARY KEY ({', '.join(pk_cols)})"
+        pk_clause = f", CONSTRAINT PK_{source_name} PRIMARY KEY ({', '.join(pk_cols)}) "
 
     ddl = f"""IF OBJECT_ID('ODS.{source_name}', 'U') IS NOT NULL
 DROP TABLE [ODS].[{source_name}];
@@ -43,21 +43,46 @@ def generate_dw_table_ddl(schema: str, table_name: str, columns: list[dict], tim
 
     sk_col = f"{table_name.replace('Dim_', '')}_SK"
     
-    column_defs_list = []
-    insert_columns_list = []
+    has_scd2 = any(
+        val in (1, 1.0, '1', True) or (isinstance(val, str) and val.strip() == '1')
+        for c in columns
+        for val in [c.get('Is_Type2_Attribute')]
+        if val is not None
+    )
+
+    # Build metadata columns in correct order (SCD2 first if present, then common)
+    metadata_defs = []
+    if has_scd2:
+        metadata_defs.extend([
+            "    [Row_Is_Current] BIT NOT NULL DEFAULT 1,",
+            "    [Row_Effective_Datetime] DATETIME NOT NULL DEFAULT GETDATE(),",
+            "    [Row_Expiry_Datetime] DATETIME NULL,"
+        ])
+    
+    metadata_defs.extend([
+        "    [Inserted_Datetime] DATETIME2 NOT NULL DEFAULT GETDATE(),",
+        "    [Updated_Datetime] DATETIME NULL,",
+        "    [Is_Deleted] BIT NOT NULL DEFAULT 0,",
+        "    [Row_Change_Reason] VARCHAR(50) NULL"
+    ])
+
+    # Data columns
+    data_defs = []
+    insert_cols = []
     for col in columns:
         col_name = col['Target_Column'].strip()
         nullability = "NOT NULL" if col.get('Is_Required', False) else "NULL"
-        column_defs_list.append(f", [{col_name}] {col['Data_Type']} {nullability}")
-        insert_columns_list.append(f"[{col_name}]")
+        data_defs.append(f", [{col_name}] {col['Data_Type']} {nullability}")
+        insert_cols.append(f"[{col_name}]")
     
-    column_defs = '\n'.join(column_defs_list)
-    insert_columns = ', '.join(insert_columns_list)
+    column_defs = '\n'.join(metadata_defs + data_defs)
+    insert_columns = ', '.join(insert_cols)
     select_columns = insert_columns
 
+    # Unique index
     nk_cols = [c['Target_Column'].strip() for c in columns if c.get('Is_PK', False)]
     nk_where = "WHERE [Is_Deleted] = 0"
-    if any(c.get('Is_Type2_Attribute', False) for c in columns):
+    if has_scd2:
         nk_where = "WHERE [Row_Is_Current] = 1 AND [Is_Deleted] = 0"
     unique_index_clause = f"CREATE UNIQUE NONCLUSTERED INDEX [UIX_NK_{table_name}_Active] ON [{schema}].[{table_name}] ({', '.join([f'[{col}]' for col in nk_cols])}) {nk_where};" if nk_cols else ""
 
@@ -75,7 +100,13 @@ def generate_dw_table_ddl(schema: str, table_name: str, columns: list[dict], tim
     return ddl
 
 def generate_merge_proc_ddl(source_name: str, staging_table: str, dw_table: str, columns: list[dict]) -> str:
-    is_scd2 = any(c.get('Is_Type2_Attribute', 0) == 1 for c in columns)
+    is_scd2 = any(
+        val in (1, 1.0, '1', True) or (isinstance(val, str) and val.strip() == '1')
+        for c in columns
+        for val in [c.get('Is_Type2_Attribute')]
+        if val is not None
+    )
+    
     pattern = 'scd_type2' if is_scd2 else 'scd_type1'
     
     template_path = SYSTEM_BASE_PATH() / "sp_templates" / f"{pattern}.template.sql"
@@ -85,13 +116,8 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, dw_table: str,
     template = template_path.read_text(encoding="utf-8")
 
     key_column = next((c['Target_Column'] for c in columns if c.get('Is_PK', False)), 'Source_Name')
-    for c in columns:
-        if 'Is_Type2_Attribute' in c:
-            c['Is_Type2_Attribute'] = int(c['Is_Type2_Attribute']) if c['Is_Type2_Attribute'] else 0
-        if 'Is_PK' in c:
-            c['Is_PK'] = int(c['Is_PK']) if c['Is_PK'] else 0
-
-    type1_cols = [c for c in columns if c.get('Is_Type2_Attribute', 0) != 1 and c.get('Is_PK', 0) != 1]
+    
+    type1_cols = [c for c in columns if not c.get('Is_Type2_Attribute', False) and not c.get('Is_PK', False)]
     update_columns = ', '.join([f"d.[{c['Target_Column']}] = o.[{c['Target_Column']}]" for c in type1_cols])
     type1_where_changes = ' OR '.join([f"COALESCE(d.[{c['Target_Column']}], '') <> COALESCE(o.[{c['Target_Column']}], '')" for c in type1_cols]) or "1=0"
     
@@ -102,7 +128,6 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, dw_table: str,
     select_columns = ', '.join([f"o.[{c['Target_Column']}]" for c in columns])
     join_condition = f"d.[{key_column}] = o.[{key_column}]"
 
-    # Conditional Type 1 UPDATE block
     type1_update_block = ""
     if type1_cols:
         type1_update_block = f"""-- Type 1: UPDATE changed attributes
@@ -134,17 +159,27 @@ SET @UpdatedCount = 0;
     return ddl
 
 def apply_ddl_from_run():
+    """
+    Executes all .sql files in DW_DDL/run/ folder.
+    Splits on GO and executes batches separately.
+    On success: moves to archive/ with timestamp.
+    On failure: leaves in run/, logs error, continues with next file.
+    """
     base_path = SYSTEM_BASE_PATH()
     run_dir = base_path / "DW_DDL" / "run"
     archive_dir = base_path / "DW_DDL" / "archive"
     archive_dir.mkdir(parents=True, exist_ok=True)
 
-    sql_files = list(run_dir.glob("*.sql"))
-    if not sql_files:
-        print("No .sql files in run/ folder - nothing to apply")
+    if not run_dir.exists():
+        print("No run folder found - skipping DDL apply")
         return
 
-    print(f"Applying {len(sql_files)} DDL scripts from run/...")
+    sql_files = list(run_dir.glob("*.sql"))
+    if not sql_files:
+        print("No .sql files in run/ folder")
+        return
+
+    print(f"Applying {len(sql_files)} DDL scripts from run/ folder...")
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -153,23 +188,36 @@ def apply_ddl_from_run():
         try:
             sql_content = sql_file.read_text(encoding="utf-8")
             
-            # Split by GO (case-insensitive, handle variations)
-            batches = [batch.strip() for batch in sql_content.split('GO') if batch.strip()]
-            
+            # Split into batches on GO (case-insensitive, trim whitespace)
+            batches = []
+            current_batch = []
+            for line in sql_content.splitlines():
+                stripped = line.strip()
+                if stripped.upper() == 'GO':
+                    if current_batch:
+                        batches.append('\n'.join(current_batch))
+                    current_batch = []
+                else:
+                    current_batch.append(line)
+            if current_batch:
+                batches.append('\n'.join(current_batch))
+
             print(f"  Processing {sql_file.name} ({len(batches)} batches)")
             
             for i, batch in enumerate(batches, 1):
-                if batch:
-                    try:
-                        cursor.execute(batch)
-                        conn.commit()
-                        print(f"    Batch {i}/{len(batches)} applied successfully")
-                    except Exception as batch_e:
-                        conn.rollback()
-                        print(f"    ERROR in batch {i} of {sql_file.name}: {str(batch_e)}")
-                        raise  # Stop on error, leave file in run/
-            
-            # Archive on full success
+                batch = batch.strip()
+                if not batch:
+                    continue
+                try:
+                    cursor.execute(batch)
+                    conn.commit()
+                    print(f"    Batch {i}/{len(batches)} applied successfully")
+                except Exception as batch_e:
+                    conn.rollback()
+                    print(f"    ERROR in batch {i} of {sql_file.name}: {str(batch_e)}")
+                    raise  # Stop on error, leave file in run/
+
+            # Archive on success
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             archive_path = archive_dir / f"{sql_file.stem}_{ts}{sql_file.suffix}"
             sql_file.rename(archive_path)
@@ -179,6 +227,14 @@ def apply_ddl_from_run():
             conn.rollback()
             print(f"  ERROR applying {sql_file.name}: {str(e)}")
             # Leave in run/ for fix & retry
+            log_audit_source_import(
+                audit_id=get_next_audit_import_id(),
+                source_import_sk=0,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                process_status='Failed',
+                exception_detail=f"DDL apply failed: {sql_file.name} - {str(e)}"
+            )
 
     cursor.close()
     conn.close()
