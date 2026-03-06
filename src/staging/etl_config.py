@@ -1,22 +1,14 @@
 # src/staging/etl_config.py
 
-"""
-Meta-loader / config bootstrapper for the ETL system.
-- Loads config from Excel → staging tables via BCP
-- Merges staging to dimension tables via stored procedures
-- Gracefully skips if config file is missing
-- Uses stored procedures for truncate and merge operations
-- Logs audit start + success/failure with real SK
-- All DB logic via stored procs or helpers in db_ops.py
-"""
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)  # Silence Pandas deprecation warning
 
 from pathlib import Path
 import pandas as pd
 import csv
-import shutil
 from datetime import datetime
 
-from src.config import BASE_PATH, CONFIG_ROOT, get_db_config, get_config
+from src.config import SYSTEM_BASE_PATH, get_config, get_db_config
 from src.utils.db import upload_via_bcp
 from src.utils.db_ops import (
     truncate_table,
@@ -24,284 +16,216 @@ from src.utils.db_ops import (
     log_audit_source_import,
     get_next_audit_import_id,
     get_source_import_sk,
-    insert_source_file_archive,
+    get_connection
 )
-
+from src.utils.ddl_generator import apply_ddl_from_run, generate_ods_table_ddl, generate_dw_table_ddl, generate_merge_proc_ddl
+from src.utils.logging_config import setup_logging
 
 def process_etl_config():
-    """
-    Loads ETL configuration from Excel into staging tables,
-    merges to dimension tables via stored procedures,
-    and logs the process to audit table at **dataset grain**:
-    - One audit row for `Source_Imports`
-    - One audit row for `Source_File_Mapping`
-    A single physical Excel file is archived once and referenced by
-    both audit rows in `Fact_Source_File_Archive`.
-
-    Graceful skip if config file is missing:
-    - Creates a single audit entry with "Nothing to update - config spreadsheet not found"
-    - Exits without raising exception
-    - Allows orchestrator to continue with other sources
-    """
+    logger = setup_logging("etl_config")
     start_time = datetime.now()
+    config_source_sk = get_source_import_sk('Source_Imports')
+    if config_source_sk == 0:
+        logger.warning("No Source_Import_SK for 'Source_Imports' - using 0")
 
-    # Per-dataset audit tracking (created only when config file exists)
-    imports_audit_id = None
-    mapping_audit_id = None
-    imports_start_time = start_time
-    mapping_start_time = start_time
+    audit_id = get_next_audit_import_id()
+
+    log_audit_source_import(
+        audit_id=audit_id,
+        source_import_sk=config_source_sk,
+        start_time=start_time,
+        end_time=None,
+        total_row_count=0,
+        total_file_count=0,
+        exception_detail=None,
+        pattern=None,
+        process_status='Running'
+    )
+    logger.info(f"Started audit entry: Audit_Source_Import_SK = {audit_id} (linked to Source_Import_SK = {config_source_sk})")
 
     try:
-        # === Locate config file ===
-        config_folder = CONFIG_ROOT
-        config_filename = get_config("base", "config_filename")
-
+        config_folder = SYSTEM_BASE_PATH() / get_config("system", "config_folder", "config")
+        config_filename = get_config("system", "config_filename", "ETL_Config.xlsx")
         config_files = list(config_folder.glob(config_filename))
 
         if not config_files:
-            # Preserve existing behaviour: one "Skipped" audit row when the
-            # config spreadsheet is missing.
-            audit_id = get_next_audit_import_id()
             end_time = datetime.now()
             log_audit_source_import(
                 audit_id=audit_id,
-                source_import_sk=0,
+                source_import_sk=config_source_sk,
                 start_time=start_time,
                 end_time=end_time,
                 total_row_count=0,
                 total_file_count=0,
-                exception_detail="Nothing to update - config spreadsheet not found",
+                exception_detail="Config spreadsheet not found",
                 pattern=None,
-                process_status="Skipped",
+                process_status='Skipped'
             )
-            print(f"[GRACEFUL SKIP] Config spreadsheet not found: {config_folder / config_filename}")
-            print("Continuing ETL run without config refresh")
-            return  # Exit cleanly - no crash
+            logger.warning(f"Config spreadsheet not found: {config_folder / config_filename}")
+            return
 
         config_file = config_files[0]
-        print(f"Loading ETL config from: {config_file}")
+        logger.info(f"Loading config from: {config_file}")
+        format_dir = config_folder / get_config("system", "format_subfolder", "format")
+        format_system_dir = format_dir / "system"
 
-        # Read sheets (force string to avoid type issues)
+        format_imports = format_system_dir / "source_imports.fmt"
+        format_mapping = format_system_dir / "source_file_mapping.fmt"
+
+        # Ensure folders exist
+        format_system_dir.mkdir(parents=True, exist_ok=True)
+
         df_imports = pd.read_excel(config_file, sheet_name="Source_Imports", dtype=str)
         df_mapping = pd.read_excel(config_file, sheet_name="Source_File_Mapping", dtype=str)
 
-        # Clean whitespace
+        # Aggressive trimming to remove all whitespace issues
+        string_cols = df_mapping.select_dtypes(include=['object']).columns
+        df_mapping[string_cols] = df_mapping[string_cols].apply(
+            lambda x: x.str.strip().replace(r'[\s\xa0\t\r\n]+', ' ', regex=True).str.strip()
+        )
         df_imports = df_imports.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
-        df_mapping = df_mapping.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
 
-        # Ensure Is_Type2_Attribute and Is_PK exist; normalize TRUE/FALSE to 1/0 for BCP bit
-        for col in ("Is_Type2_Attribute", "Is_PK"):
-            if col not in df_mapping.columns:
-                df_mapping[col] = "0"
-            else:
-                df_mapping[col] = df_mapping[col].apply(
-                    lambda v: "1" if str(v).upper() in ("TRUE", "1", "YES") else "0"
-                )
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        df_imports['Inserted_Datetime'] = now_str
+        df_mapping['Inserted_Datetime'] = now_str
 
-        # ODBC BCP expects yyyy-mm-dd hh:mm:ss (no fractional seconds for compatibility)
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        df_imports["Inserted_Datetime"] = now_str
-        df_mapping["Inserted_Datetime"] = now_str
-
-        # Column order for Source_File_Mapping (must match .fmt file)
-        mapping_cols = [
-            "Source_Name", "Source_Column", "Target_Column", "Data_Type", "Description",
-            "Is_Type2_Attribute", "Is_PK", "Inserted_Datetime",
-        ]
-        df_mapping = df_mapping[[c for c in mapping_cols if c in df_mapping.columns]]
-
-        # Prepare text files for BCP
-        temp_dir = Path("temp")
+        temp_dir = SYSTEM_BASE_PATH() / get_config("system", "temp_folder", "temp")
         temp_dir.mkdir(exist_ok=True)
 
         imports_path = temp_dir / "source_imports_stg.txt"
         mapping_path = temp_dir / "source_file_mapping_stg.txt"
 
-        df_imports.to_csv(
-            imports_path,
-            sep="\t",
-            index=False,
-            header=False,
-            encoding="utf-8",
-            lineterminator="\r\n",
-            quoting=csv.QUOTE_NONE,
-            escapechar="\\",
-            na_rep="",
-        )
+        logger.debug(f"Source_Imports: {len(df_imports)} rows, columns: {df_imports.columns.tolist()}")
 
-        df_mapping.to_csv(
-            mapping_path,
-            sep="\t",
-            index=False,
-            header=False,
-            encoding="utf-8",
-            lineterminator="\r\n",
-            quoting=csv.QUOTE_NONE,
-            escapechar="\\",
-            na_rep="",
-        )
+        df_imports.to_csv(imports_path, sep='\t', index=False, header=False, encoding='utf-8',
+                          lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
+        logger.debug(f"Wrote Source_Imports temp file: {imports_path} ({imports_path.stat().st_size} bytes)")
+
+        # Select only known columns for mapping (prevents trailing tabs)
+        known_cols = [
+            'Source_Name', 'Source_Column', 'Target_Column',
+            'Data_Type', 'Description', 'Is_Type2_Attribute', 'Is_PK', 'Is_Required', 'Inserted_Datetime'
+        ]
+        df_mapping = df_mapping[known_cols].fillna('')
+
+        logger.debug(f"Mapping: {len(df_mapping)} rows, columns: {df_mapping.columns.tolist()}")
+
+        df_mapping.to_csv(mapping_path, sep='\t', index=False, header=False, encoding='utf-8',
+                          lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
+        logger.debug(f"Wrote Mapping temp file: {mapping_path} ({mapping_path.stat().st_size} bytes)")
 
         db_cfg = get_db_config()
 
-        # Create per-dataset audit rows now that we know we have a real file
-        imports_start_time = datetime.now()
-        mapping_start_time = imports_start_time
+        truncate_table('ETL.Source_Imports')
+        truncate_table('ETL.Source_File_Mapping')
 
-        imports_audit_id = get_next_audit_import_id()
-        mapping_audit_id = get_next_audit_import_id()
+        upload_via_bcp(imports_path, 'ETL.Source_Imports', db_cfg, str(format_imports), 1)
+        upload_via_bcp(mapping_path, 'ETL.Source_File_Mapping', db_cfg, str(format_mapping), 1)
 
-        # Initial "Running" audit entries at dataset grain
-        log_audit_source_import(
-            audit_id=imports_audit_id,
-            source_import_sk=0,
-            start_time=imports_start_time,
-            end_time=None,
-            total_row_count=0,
-            total_file_count=0,
-            exception_detail=None,
-            pattern=config_filename,
-            process_status="Running",
-        )
-        log_audit_source_import(
-            audit_id=mapping_audit_id,
-            source_import_sk=0,
-            start_time=mapping_start_time,
-            end_time=None,
-            total_row_count=0,
-            total_file_count=0,
-            exception_detail=None,
-            pattern=config_filename,
-            process_status="Running",
-        )
+        execute_proc('ETL.SP_Merge_Dim_Source_Imports')
+        execute_proc('ETL.SP_Merge_Dim_Source_Imports_Mapping')
 
-        format_dir = CONFIG_ROOT / "format"
-        format_imports = format_dir / "source_imports.fmt"
-        format_mapping = format_dir / "source_file_mapping.fmt"
+        active_data_sources = df_imports[
+            (df_imports['Is_Active'] == '1') & 
+            (~df_imports['Source_Name'].isin(['Source_Imports', 'Source_File_Mapping']))
+        ]['Source_Name'].unique()
 
-        format_dir.mkdir(exist_ok=True)
+        generated_dir = SYSTEM_BASE_PATH() / get_config("system", "ddl_generated_subfolder", "DW_DDL/generated")
+        generated_dir.mkdir(parents=True, exist_ok=True)
 
-        # Truncate staging tables via stored procedure (preferred over direct TRUNCATE)
-        # Note: if you later move truncate to proc, replace these calls
-        truncate_table("ETL.Source_Imports")
-        truncate_table("ETL.Source_File_Mapping")
+        conn = get_connection()
+        cursor = conn.cursor()
 
-        # BCP load
-        upload_via_bcp(
-            file_path=imports_path,
-            table="ETL.Source_Imports",
-            db_config=db_cfg,
-            format_file=str(format_imports),
-            first_row=1,
-        )
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-        upload_via_bcp(
-            file_path=mapping_path,
-            table="ETL.Source_File_Mapping",
-            db_config=db_cfg,
-            format_file=str(format_mapping),
-            first_row=1,
-        )
+        for source in active_data_sources:
+            # Get force flag
+            cursor.execute("SELECT Force_DDL_Generation FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source)
+            force_row = cursor.fetchone()
+            force_ddl = force_row[0] if force_row else 0
 
-        # Merge via stored procedures
-        execute_proc("ETL.SP_Merge_Dim_Source_Imports")
-        execute_proc("ETL.SP_Merge_Dim_Source_Imports_Mapping")
+            cursor.execute("EXEC [ETL].[SP_Get_Source_Imports_Last_Checked] ?", source)
+            last_checked_row = cursor.fetchone()
+            last_checked = last_checked_row[0] if last_checked_row else None
 
-        # Fetch real SKs for config sources
-        imports_sk = get_source_import_sk("Source_Imports")
-        mapping_sk = get_source_import_sk("Source_File_Mapping")
+            cursor.execute("""
+                SELECT MAX(Inserted_Datetime) 
+                FROM [ETL].[Dim_Source_Imports_Mapping] 
+                WHERE Source_Name = ?
+            """, source)
+            max_mapping_change_row = cursor.fetchone()
+            max_mapping_change = max_mapping_change_row[0] if max_mapping_change_row else None
 
-        # === ARCHIVING + LINEAGE ===
-        # One physical archive copy of the Excel file, referenced by two audit rows.
-        archive_base = BASE_PATH() / "archive" / "raw" / datetime.now().strftime("%Y-%m-%d")
-        archive_dir = archive_base / "Config"
-        archive_dir.mkdir(parents=True, exist_ok=True)
+            if force_ddl or (last_checked is None or (max_mapping_change and max_mapping_change > last_checked)):
+                logger.info(f"Mapping changed or forced for {source} - generating DDL")
 
-        timestamp_suffix = datetime.now().strftime("_%Y%m%d_%H%M%S")
-        archive_filename = config_file.stem + timestamp_suffix + config_file.suffix
-        archive_path = archive_dir / archive_filename
+                source_mapping = df_mapping[df_mapping['Source_Name'] == source].to_dict('records')
 
-        shutil.copy(str(config_file), str(archive_path))
+                # Get full qualified table names
+                cursor.execute("SELECT Staging_Table, DW_Table_Name FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source)
+                row = cursor.fetchone()
+                staging_table, dw_table = row if row else (None, None)
 
-        # Lineage for Source_Imports sheet
-        insert_source_file_archive(
-            audit_id=imports_audit_id,
-            source_import_sk=imports_sk,
-            original_file_name=config_file.name,
-            archive_file_name=archive_filename,
-            archive_full_path=str(archive_path),
-            file_row_count=len(df_imports),
-            process_status="Success",
-        )
+                if not staging_table or not dw_table:
+                    logger.warning(f"Missing Staging_Table or DW_Table_Name for {source}")
+                    continue
 
-        # Lineage for Source_File_Mapping sheet
-        insert_source_file_archive(
-            audit_id=mapping_audit_id,
-            source_import_sk=mapping_sk,
-            original_file_name=config_file.name,
-            archive_file_name=archive_filename,
-            archive_full_path=str(archive_path),
-            file_row_count=len(df_mapping),
-            process_status="Success",
-        )
+                ods_ddl = generate_ods_table_ddl(source, source_mapping)
+                (generated_dir / f"ODS_{source}.sql").write_text(ods_ddl)
 
-        # Success audit updates at dataset grain
+                dw_ddl = generate_dw_table_ddl('DW', f"Dim_{source}", source_mapping, timestamp)
+                (generated_dir / f"DW_Dim_{source}.sql").write_text(dw_ddl)
+
+                merge_ddl = generate_merge_proc_ddl(source, staging_table, dw_table, source_mapping)
+                (generated_dir / f"SP_Merge_Dim_{source}.sql").write_text(merge_ddl)
+
+                execute_proc('ETL.SP_Update_Source_Imports_Last_Checked', f"@SourceName = '{source}', @LastChecked = '{now_str}'")
+            else:
+                logger.debug(f"No mapping change for {source} - skipping generation")
+
+        cursor.close()
+        conn.close()
+
+        # Auto-apply any scripts moved to run/ folder
+        apply_ddl_from_run()
+
         end_time = datetime.now()
+        row_count = len(df_imports) + len(df_mapping)
         log_audit_source_import(
-            audit_id=imports_audit_id,
-            source_import_sk=imports_sk,
-            start_time=imports_start_time,
+            audit_id=audit_id,
+            source_import_sk=config_source_sk,
+            start_time=start_time,
             end_time=end_time,
-            total_row_count=len(df_imports),
-            total_file_count=1,  # one physical file feeding this dataset
+            total_row_count=row_count,
+            total_file_count=1,
             exception_detail=None,
             pattern=config_filename,
-            process_status="Success",
+            process_status='Success'
         )
-        log_audit_source_import(
-            audit_id=mapping_audit_id,
-            source_import_sk=mapping_sk,
-            start_time=mapping_start_time,
-            end_time=end_time,
-            total_row_count=len(df_mapping),
-            total_file_count=1,  # one physical file feeding this dataset
-            exception_detail=None,
-            pattern=config_filename,
-            process_status="Success",
-        )
+        logger.info("ETL configuration loaded and merged successfully.")
 
     except Exception as e:
         end_time = datetime.now()
+        log_audit_source_import(
+            audit_id=audit_id,
+            source_import_sk=config_source_sk,
+            start_time=start_time,
+            end_time=end_time,
+            total_row_count=0,
+            total_file_count=0,
+            exception_detail=str(e),
+            pattern=None,
+            process_status='Failed'
+        )
 
-        # If per-dataset audits were created, mark them as failed
-        if imports_audit_id is not None:
-            log_audit_source_import(
-                audit_id=imports_audit_id,
-                source_import_sk=0,
-                start_time=imports_start_time,
-                end_time=end_time,
-                total_row_count=0,
-                total_file_count=0,
-                exception_detail=str(e),
-                pattern=config_filename if "config_filename" in locals() else None,
-                process_status="Failed",
-            )
+        logs_dir = SYSTEM_BASE_PATH() / get_config("system", "logs_folder", "logs")
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        error_log_path = logs_dir / f"etl_errors_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        with open(error_log_path, "w", encoding="utf-8") as f:
+            f.write(f"{datetime.now()}: {str(e)}\n")
+        logger.error(f"Error details saved to: {error_log_path}")
 
-        if mapping_audit_id is not None:
-            log_audit_source_import(
-                audit_id=mapping_audit_id,
-                source_import_sk=0,
-                start_time=mapping_start_time,
-                end_time=end_time,
-                total_row_count=0,
-                total_file_count=0,
-                exception_detail=str(e),
-                pattern=config_filename if "config_filename" in locals() else None,
-                process_status="Failed",
-            )
-
-        print(f"ETL config failed: {e}")
-        raise  # Let orchestrator decide whether to continue or abort
-
+        raise
 
 if __name__ == "__main__":
     process_etl_config()

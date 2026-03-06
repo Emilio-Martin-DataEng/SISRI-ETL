@@ -16,13 +16,17 @@ from src.config import get_db_config
 
 def get_connection():
     db_cfg = get_db_config()
+
+    if db_cfg is None:
+        raise ValueError("get_db_config returned None")
+    
     conn_str = (
         f"DRIVER={{ODBC Driver 17 for SQL Server}};"
         f"SERVER={db_cfg['server']};"
         f"DATABASE={db_cfg['database']};"
         f"UID={db_cfg['username']};"
         f"PWD={db_cfg['password']};"
-        f"AUTOCOMMIT=ON"  # Prevents lingering transactions
+        f"AUTOCOMMIT=ON"
     )
     return pyodbc.connect(conn_str)
 
@@ -204,76 +208,96 @@ def insert_source_file_archive(
     return new_sk
 
 
-def generate_bcp_format_file(source_name: str, fmt_path: str):
+def generate_bcp_format_file(source_name: str, fmt_path: str | Path):
     """
-    Generate a BCP format file for a given source based on
-    ETL.Dim_Source_Imports_Mapping.
-
-    Rules:
-    - One entry per Target_Column (Is_Deleted = 0), ordered by File_Mapping_SK
-    - All fields treated as SQLCHAR with a generous length (500 chars),
-      except Inserted_Datetime which uses length 30
-    - Field terminator: "\\t" for all but the last column
-    - Row terminator: "\\r\\n" for the last column only
-
-    This avoids relying on `bcp ... format nul` and fixes the
-    unwanted "\\r\\r\\n" row terminator.
+    Generate BCP format file for a source.
+    Uses [ETL].[SP_Get_Source_Import_Mapping] to get columns + Data_Type.
+    Saves to full fmt_path (e.g. config/format/source_imports.fmt)
     """
+    fmt_path = Path(fmt_path)  # ensure Path object
+    fmt_dir = fmt_path.parent
+    fmt_dir.mkdir(parents=True, exist_ok=True)
+
     conn = get_connection()
     cursor = conn.cursor()
 
     try:
+        # Call the stored procedure to get mapping with Data_Type
         cursor.execute(
-            """
-            SELECT File_Mapping_SK, Target_Column
-            FROM ETL.Dim_Source_Imports_Mapping
-            WHERE Source_Name = ?
-              AND Is_Deleted = 0
-            ORDER BY File_Mapping_SK
-            """,
-            source_name,
+            "EXEC [ETL].[SP_Get_Source_Import_Mapping] ?",
+            source_name
         )
         rows = cursor.fetchall()
+
+        if not rows:
+            raise ValueError(f"No mapping columns found for source '{source_name}'")
+
+        # rows = list of (Source_Column, Target_Column, Data_Type)
+        target_columns = []
+        for row in rows:
+            target_columns.append({
+                'Target_Column': row[1],  # Target_Column
+                'Data_Type': row[2]       # Data_Type
+            })
+
+        # Add Inserted_Datetime as last column
+        target_columns.append({
+            'Target_Column': 'Inserted_Datetime',
+            'Data_Type': 'DATETIME'
+        })
+
+        column_count = len(target_columns)
+
+        lines = []
+        lines.append("14.0")
+        lines.append(str(column_count))
+
+        for idx, col in enumerate(target_columns, start=1):
+            is_last = idx == column_count
+            terminator = "\\r\\n" if is_last else "\\t"
+
+            # Map Data_Type to BCP type
+            data_type_upper = col['Data_Type'].upper()
+            if any(t in data_type_upper for t in ['VARCHAR', 'CHAR', 'TEXT', 'NVARCHAR', 'NCHAR'] or col['Target_Column'] == "Inserted_Datetime"):
+                bcp_type = "SQLCHAR"
+            elif 'INT' in data_type_upper:
+                bcp_type = "SQLINT"
+            elif any(t in data_type_upper for t in ['DATE', 'DATETIME', 'TIME']):
+                bcp_type = "SQLDATETIME"
+            elif 'DECIMAL' in data_type_upper or 'NUMERIC' in data_type_upper:
+                bcp_type = "SQLNUMERIC"
+            elif 'FLOAT' in data_type_upper or 'REAL' in data_type_upper:
+                bcp_type = "SQLFLT8"
+            else:
+                bcp_type = "SQLCHAR"  # safe fallback
+
+            length = 30 if col['Target_Column'] == "Inserted_Datetime" else 500
+ 
+
+            line = (
+                f"{idx}\t"
+                f"{bcp_type}\t"
+                f"0\t"
+                f"{length}\t"
+                f"\"{terminator}\"\t"
+                f"{idx}\t"
+                f"{col['Target_Column']}\t"
+                f"SQL_Latin1_General_CP1_CI_AS"
+            )
+            lines.append(line)
+
+        with open(fmt_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+
+        print(f"[BCP] Generated format file: {fmt_path}")
+        print(f"  Columns used: {[c['Target_Column'] for c in target_columns]}")
+
+    except Exception as e:
+        print(f"[ERROR] Failed to generate format for {source_name}: {e}")
+        raise
+
     finally:
         cursor.close()
         conn.close()
-
-    target_columns = [row[1] for row in rows]
-
-    # Ensure Inserted_Datetime is always the last column,
-    # matching the staging text file layout.
-    if "Inserted_Datetime" not in target_columns:
-        target_columns.append("Inserted_Datetime")
-
-    column_count = len(target_columns)
-
-    lines = []
-    lines.append("14.0")
-    lines.append(str(column_count))
-
-    for idx, col_name in enumerate(target_columns, start=1):
-        is_last = idx == column_count
-        terminator = "\\r\\n" if is_last else "\\t"
-
-        # Generous length defaults – actual SQL types live in the table
-        length = 30 if col_name == "Inserted_Datetime" else 500
-
-        line = (
-            f"{idx}\t"
-            f"SQLCHAR\t"
-            f"0\t"
-            f"{length}\t"
-            f"\"{terminator}\"\t"
-            f"{idx}\t"
-            f"{col_name}\t"
-            f"SQL_Latin1_General_CP1_CI_AS"
-        )
-        lines.append(line)
-
-    fmt_dir = Path(fmt_path).parent
-    fmt_dir.mkdir(parents=True, exist_ok=True)
-
-    with open(fmt_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
 
 

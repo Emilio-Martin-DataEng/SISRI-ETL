@@ -1,8 +1,30 @@
+# Python
 .venv
+.venv312/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Temp/runtime
 temp/
 logs/
 archive/
-.venv/
+rejected/
+*.log
+*.err
+*.tmp
+
+# Env/secrets
+.env
+
+# DDL backups
 DW_DDL/archive/
+*.bak
+*.backup
+
+# OS/IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

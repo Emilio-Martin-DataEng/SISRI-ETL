@@ -1,0 +1,30 @@
+# config.yaml - SISRI-ETL (cleaned & consolidated)
+
+system:                                      # FIXED paths - admin only
+  base_path: ""                              # empty = auto-detect project root
+  config_folder: "config"
+  config_filename: "ETL_Config.xlsx"
+  format_subfolder: "format"
+  logs_folder: "logs"
+  temp_folder: "temp"
+  ddl_generated_subfolder: "DW_DDL/generated"
+  ddl_run_subfolder: "DW_DDL/run"
+  ddl_archive_subfolder: "DW_DDL/archive"
+
+data:                                        # FLEXIBLE paths - data capturer role
+  base_path: "C:/SISRI"                     # Main data root
+  archive_base: "archive"                    # default relative to data.base_path
+
+database:
+  server: "Emilio"
+  database: "SISRI"
+  username: "etl_user"
+  password: "${SQLSERVER_PASSWORD}"
+  type: "sqlserver"
+logs:
+  bcp_errors_prefix: "bcp_errors"
+
+# Optional future sections
+etl_config_loader:
+  sheet_imports: "Source_Imports"
+  sheet_mapping: "Source_File_Mapping"

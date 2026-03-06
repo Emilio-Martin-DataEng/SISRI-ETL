@@ -1,0 +1,9 @@
+14.0
+7
+1 SQLCHAR 0 255 "	" 1 Wholesaler_Code SQL_Latin1_General_CP1_CI_AS
+2 SQLCHAR 0 255 "	" 2 Wholesaler_Name SQL_Latin1_General_CP1_CI_AS
+3 SQLCHAR 0 255 "	" 3 Wholesaler_Address SQL_Latin1_General_CP1_CI_AS
+4 SQLCHAR 0 255 "	" 4 Wholesaler_City SQL_Latin1_General_CP1_CI_AS
+5 SQLCHAR 0 255 "	" 5 Wholesaler_Province SQL_Latin1_General_CP1_CI_AS
+6 SQLCHAR 0 255 "	" 6 Wholesaler_Country SQL_Latin1_General_CP1_CI_AS
+7 SQLCHAR 0 30 "\r\n" 7 Inserted_Datetime ""
