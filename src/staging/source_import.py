@@ -7,7 +7,7 @@ from datetime import datetime
 
 from src.config import SYSTEM_BASE_PATH, get_config, get_db_config
 from src.utils.db import upload_via_bcp
-from src.utils.db_ops import get_connection, execute_proc
+from src.utils.db_ops import get_connection, execute_proc, truncate_table
 from src.utils.logging_config import setup_logging
 from src.utils.rejected_rows import RejectedRowsHandler
 
@@ -63,7 +63,7 @@ def get_source_pk_columns(source_name: str):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT Target_Column 
+        SELECT Source_Column 
         FROM [ETL].[Dim_Source_Imports_Mapping] 
         WHERE Source_Name = ? AND Is_PK = 1
         ORDER BY File_Mapping_SK
@@ -132,6 +132,10 @@ def process_source(source_name: str, force_ddl: bool = False, audit_id: int = No
             return 0
 
     logger.info(f"Found {len(files)} files to process")
+
+    # === Truncate ODS before loading (transient staging) ===
+    print(f"[INFO] Truncating transient staging table: ODS.{source_name}")
+    truncate_table(f"ODS.{source_name}")
 
     total_rows = 0
     rejected_count = 0

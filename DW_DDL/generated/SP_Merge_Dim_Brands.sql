@@ -1,5 +1,5 @@
 -- Merge proc for Brands -> [DW].[Dim_Brands] (SCD Type 1)
--- Generated at 2026-03-06 10:56:29
+-- Generated at 2026-03-06 12:10:31
 CREATE OR ALTER PROCEDURE [ETL].[SP_Merge_Dim_Brands]
     @Source_Import_SK INT = NULL,
     @Audit_Source_Import_SK INT = NULL

@@ -1,5 +1,0 @@
-Rejected rows for Source_File_Mapping - 2026-03-05 16:22:23.313917
-
---- ERROR processing etl_config.xlsx ---
-upload_via_bcp() got an unexpected keyword argument 'error_file'
-

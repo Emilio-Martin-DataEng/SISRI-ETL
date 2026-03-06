@@ -31,7 +31,7 @@ def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
     if sources is None:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT Source_Name FROM [ETL].[Dim_Source_Imports] WHERE Is_Active = 1 AND Is_Deleted = 0")
+        cursor.execute("SELECT Source_Name FROM [ETL].[Dim_Source_Imports] WHERE Is_Active = 1 AND Is_Deleted = 0 AND Processing_Order >= 1.0")
         sources = [row[0] for row in cursor.fetchall()]
         cursor.close()
         conn.close()
