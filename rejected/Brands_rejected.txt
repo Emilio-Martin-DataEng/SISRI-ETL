@@ -1,0 +1,32 @@
+Rejected rows for Brands - 2026-03-06 09:01:35.264570
+
+--- ERROR on Brands.xlsx ---
+BCP failed (exit code 1)
+Command: bcp ODS.Brands in C:\Users\Emilio\SISRI\temp\Brands_Brands_cleaned.txt -S Emilio -d SISRI -U etl_user -P *** -F 1 -f C:\Users\Emilio\SISRI\config\format\sources\brands.fmt -r \r\n -e C:\Users\Emilio\SISRI\logs\bcp_errors_20260306_090135.log
+Stdout: SQLState = S1000, NativeError = 0
+Error = [Microsoft][ODBC Driver 17 for SQL Server]I/O error while reading BCP format file
+Stderr: <empty>
+Error log: C:\Users\Emilio\SISRI\logs\bcp_errors_20260306_090135.log
+Traceback (most recent call last):
+  File "C:\Users\Emilio\SISRI\src\utils\db.py", line 61, in upload_via_bcp
+    result = subprocess.run(
+             ^^^^^^^^^^^^^^^
+  File "C:\Users\Emilio\AppData\Local\Programs\Python\Python312\Lib\subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['bcp', 'ODS.Brands', 'in', 'C:\\Users\\Emilio\\SISRI\\temp\\Brands_Brands_cleaned.txt', '-S', 'Emilio', '-d', 'SISRI', '-U', 'etl_user', '-P', 'supersecret123', '-F', '1', '-f', 'C:\\Users\\Emilio\\SISRI\\config\\format\\sources\\brands.fmt', '-r', '\\r\\n', '-e', 'C:\\Users\\Emilio\\SISRI\\logs\\bcp_errors_20260306_090135.log']' returned non-zero exit status 1.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Emilio\SISRI\src\staging\source_import.py", line 188, in process_source
+    upload_via_bcp(temp_flat, f"ODS.{source_name}", get_db_config(), str(fmt_path), 1)
+  File "C:\Users\Emilio\SISRI\src\utils\db.py", line 101, in upload_via_bcp
+    raise RuntimeError(error_msg)
+RuntimeError: BCP failed (exit code 1)
+Command: bcp ODS.Brands in C:\Users\Emilio\SISRI\temp\Brands_Brands_cleaned.txt -S Emilio -d SISRI -U etl_user -P *** -F 1 -f C:\Users\Emilio\SISRI\config\format\sources\brands.fmt -r \r\n -e C:\Users\Emilio\SISRI\logs\bcp_errors_20260306_090135.log
+Stdout: SQLState = S1000, NativeError = 0
+Error = [Microsoft][ODBC Driver 17 for SQL Server]I/O error while reading BCP format file
+Stderr: <empty>
+Error log: C:\Users\Emilio\SISRI\logs\bcp_errors_20260306_090135.log
+
+

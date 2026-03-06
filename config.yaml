@@ -1,8 +1,4 @@
-# config.yaml - SISRI-ETL (cleaned & extended)
-base:
-  file_root: "C:/SISRI"
-  config_folder: "config"                    # ← add this
-  config_filename: "ETL_Config.xlsx"         # ← add this
+# config.yaml - SISRI-ETL (cleaned & consolidated)
 
 system:                                      # FIXED paths - admin only
   base_path: ""                              # empty = auto-detect project root
@@ -16,8 +12,7 @@ system:                                      # FIXED paths - admin only
   ddl_archive_subfolder: "DW_DDL/archive"
 
 data:                                        # FLEXIBLE paths - data capturer role
-  base_path: "C:/SISRI"                             # empty = fallback to file_root / data
-  # Per-source overrides live in Dim_Source_Imports (Rel_Path, Archive_Rel_Path)
+  base_path: "C:/SISRI"                     # Main data root
   archive_base: "archive"                    # default relative to data.base_path
 
 database:

@@ -1,9 +1,9 @@
 -- Safe regeneration template for DW.Dim_Brands (SCD Type 1)
--- Generated at 2026-03-05 17:01:21
+-- Generated at 2026-03-06 10:56:29
 
 -- Drop old backup if it exists (prevents rename conflict)
-IF OBJECT_ID('DW.Dim_Brands_backup_20260305_170121', 'U') IS NOT NULL
-    DROP TABLE [DW].[Dim_Brands_backup_20260305_170121];
+IF OBJECT_ID('DW.Dim_Brands_backup_20260306_105629', 'U') IS NOT NULL
+    DROP TABLE [DW].[Dim_Brands_backup_20260306_105629];
 GO
 
 -- Preserve data and rename old table if it exists
@@ -21,7 +21,7 @@ BEGIN
         DROP INDEX [UIX_NK_Dim_Brands_Active] ON [DW].[Dim_Brands];
     
     -- Rename old table to backup (preserves data)
-    EXEC sp_rename 'DW.Dim_Brands', 'Dim_Brands_backup_20260305_170121';
+    EXEC sp_rename 'DW.Dim_Brands', 'Dim_Brands_backup_20260306_105629';
 END
 GO
 
@@ -39,13 +39,13 @@ CREATE TABLE [DW].[Dim_Brands] (
 GO
 
 -- Restore data with IDENTITY_INSERT to preserve SKs
-IF OBJECT_ID('DW.Dim_Brands_backup_20260305_170121', 'U') IS NOT NULL
+IF OBJECT_ID('DW.Dim_Brands_backup_20260306_105629', 'U') IS NOT NULL
 BEGIN
     SET IDENTITY_INSERT [DW].[Dim_Brands] ON;
     
     INSERT INTO [DW].[Dim_Brands] ([Brands_SK], [Inserted_Datetime], [Updated_Datetime], [Is_Deleted], [Row_Change_Reason], [Principal_Code], [Brand_Code], [Brand_Name])
     SELECT [Brands_SK], [Inserted_Datetime], [Updated_Datetime], [Is_Deleted], [Row_Change_Reason], [Principal_Code], [Brand_Code], [Brand_Name]
-    FROM [DW].[Dim_Brands_backup_20260305_170121];
+    FROM [DW].[Dim_Brands_backup_20260306_105629];
     
     SET IDENTITY_INSERT [DW].[Dim_Brands] OFF;
 END

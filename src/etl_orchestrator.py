@@ -1,4 +1,4 @@
-# src/etl_orchestrator.py (full file with audit_id pass)
+# src/etl_orchestrator.py
 
 from datetime import datetime
 import argparse
@@ -7,8 +7,10 @@ from src.staging.etl_config import process_etl_config
 from src.staging.source_import import process_source
 from src.utils.db_ops import log_audit_source_import, get_next_audit_import_id, execute_proc, get_connection
 from src.utils.ddl_generator import apply_ddl_from_run
+from src.utils.logging_config import setup_logging
 
-def run_etl(sources=None, force_ddl=False):
+def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
+    logger = setup_logging("etl_orchestrator")
     start_time = datetime.now()
     global_audit_id = get_next_audit_import_id()
     log_audit_source_import(
@@ -18,9 +20,13 @@ def run_etl(sources=None, force_ddl=False):
         process_status='Running',
         pattern='Full ETL Run'
     )
-    print(f"Full ETL run started at {start_time}")
+    logger.info(f"Full ETL run started at {start_time}")
 
-    process_etl_config()
+    if refresh_metadata:
+        logger.info("Refreshing ETL metadata (config load)...")
+        process_etl_config()
+    else:
+        logger.info("Skipping ETL config load (use --refresh-metadata to force)")
 
     if sources is None:
         conn = get_connection()
@@ -30,7 +36,7 @@ def run_etl(sources=None, force_ddl=False):
         cursor.close()
         conn.close()
 
-    print(f"Processing {len(sources)} sources (force DDL: {force_ddl}).")
+    logger.info(f"Processing {len(sources)} sources (force DDL: {force_ddl}, refresh metadata: {refresh_metadata}).")
 
     total_rows = 0
     for source_name in sources:
@@ -38,22 +44,14 @@ def run_etl(sources=None, force_ddl=False):
             rows = process_source(source_name, force_ddl=force_ddl, audit_id=global_audit_id)
             total_rows += rows
 
-            # Skip if already processed today
+            # Phase 2: Run merge proc
             conn = get_connection()
             cursor = conn.cursor()
-            cursor.execute("SELECT Last_Successful_Load_Datetime FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source_name)
-            last_success = cursor.fetchone()
-
-
-            rows = process_source(source_name, force_ddl=force_ddl, audit_id=global_audit_id)  # ← pass audit_id
-            total_rows += rows
-
-            # Phase 2: Run merge proc
             cursor.execute("SELECT Merge_Proc_Name FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source_name)
             merge_proc_row = cursor.fetchone()
             merge_proc_name = merge_proc_row[0] if merge_proc_row and merge_proc_row[0] else f"ETL.SP_Merge_Dim_{source_name}"
             execute_proc(merge_proc_name)
-            print(f"  Merged {source_name} using {merge_proc_name}")
+            logger.debug(f"Merged {source_name} using {merge_proc_name}")
 
             # Update checkpoint
             cursor.execute("UPDATE [ETL].[Dim_Source_Imports] SET Last_Successful_Load_Datetime = GETDATE() WHERE Source_Name = ?", source_name)
@@ -62,10 +60,6 @@ def run_etl(sources=None, force_ddl=False):
             conn.close()
 
         except Exception as e:
-            if 'conn' in locals():
-                conn.rollback()
-                cursor.close()
-                conn.close()
             error_summary = str(e).split('\n')[-1] if str(e) else "Unknown error"
             log_audit_source_import(
                 global_audit_id,
@@ -75,12 +69,11 @@ def run_etl(sources=None, force_ddl=False):
                 process_status='Failed',
                 exception_detail=f"{source_name} failed: {error_summary}"
             )
-            print(f"ERROR: {source_name} failed - {error_summary}")
-            print("Stopping execution. Restart from failed source.")
+            logger.error(f"{source_name} failed - {error_summary}")
+            logger.error("Stopping execution. Restart from failed source.")
             break
 
-    # Apply DDL after all sources (even if some failed)
-    print("Applying any pending DDL scripts from run/ folder...")
+    logger.info("Applying any pending DDL scripts from run/ folder...")
     apply_ddl_from_run()
 
     end_time = datetime.now()
@@ -94,15 +87,16 @@ def run_etl(sources=None, force_ddl=False):
         process_status='Success',
         pattern='Full ETL Run'
     )
-    print(f"Full ETL run complete at {end_time}")
-    print(f"Duration: {(end_time - start_time).total_seconds():.2f}s")
-    print(f"Total rows processed: {total_rows}")
-    print(f"Processed sources: {sources}")
+    logger.info(f"Full ETL run complete at {end_time}")
+    logger.info(f"Duration: {(end_time - start_time).total_seconds():.2f}s")
+    logger.info(f"Total rows processed: {total_rows}")
+    logger.info(f"Processed sources: {sources}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SISRI ETL Orchestrator")
     parser.add_argument("--sources", nargs="+", default=None, help="Specific sources to process")
     parser.add_argument("--force-ddl", action="store_true", help="Force DDL generation")
+    parser.add_argument("--refresh-metadata", action="store_true", help="Refresh ETL config tables (Source_Imports & Source_File_Mapping)")
     args = parser.parse_args()
 
-    run_etl(args.sources, args.force_ddl)
+    run_etl(args.sources, args.force_ddl, args.refresh_metadata)

@@ -19,12 +19,14 @@ from src.utils.db_ops import (
     get_connection
 )
 from src.utils.ddl_generator import apply_ddl_from_run, generate_ods_table_ddl, generate_dw_table_ddl, generate_merge_proc_ddl
+from src.utils.logging_config import setup_logging
 
 def process_etl_config():
+    logger = setup_logging("etl_config")
     start_time = datetime.now()
     config_source_sk = get_source_import_sk('Source_Imports')
     if config_source_sk == 0:
-        print("[WARNING] No Source_Import_SK for 'Source_Imports' - using 0")
+        logger.warning("No Source_Import_SK for 'Source_Imports' - using 0")
 
     audit_id = get_next_audit_import_id()
 
@@ -39,7 +41,7 @@ def process_etl_config():
         pattern=None,
         process_status='Running'
     )
-    print(f"[AUDIT] Started audit entry: Audit_Source_Import_SK = {audit_id} (linked to Source_Import_SK = {config_source_sk})")
+    logger.info(f"Started audit entry: Audit_Source_Import_SK = {audit_id} (linked to Source_Import_SK = {config_source_sk})")
 
     try:
         config_folder = SYSTEM_BASE_PATH() / get_config("system", "config_folder", "config")
@@ -59,21 +61,19 @@ def process_etl_config():
                 pattern=None,
                 process_status='Skipped'
             )
-            print(f"[SKIP] Config spreadsheet not found: {config_folder / config_filename}")
+            logger.warning(f"Config spreadsheet not found: {config_folder / config_filename}")
             return
 
         config_file = config_files[0]
-        print(f"Loading config from: {config_file}")
+        logger.info(f"Loading config from: {config_file}")
         format_dir = config_folder / get_config("system", "format_subfolder", "format")
         format_system_dir = format_dir / "system"
-
 
         format_imports = format_system_dir / "source_imports.fmt"
         format_mapping = format_system_dir / "source_file_mapping.fmt"
 
         # Ensure folders exist
         format_system_dir.mkdir(parents=True, exist_ok=True)
-
 
         df_imports = pd.read_excel(config_file, sheet_name="Source_Imports", dtype=str)
         df_mapping = pd.read_excel(config_file, sheet_name="Source_File_Mapping", dtype=str)
@@ -92,17 +92,14 @@ def process_etl_config():
         temp_dir = SYSTEM_BASE_PATH() / get_config("system", "temp_folder", "temp")
         temp_dir.mkdir(exist_ok=True)
 
-                # ... after trimming and adding Inserted_Datetime ...
-
         imports_path = temp_dir / "source_imports_stg.txt"
         mapping_path = temp_dir / "source_file_mapping_stg.txt"
 
-        print(f"[DEBUG] Source_Imports rows before write: {len(df_imports)}")
-        print(f"[DEBUG] Source_Imports columns: {df_imports.columns.tolist()}")
+        logger.debug(f"Source_Imports: {len(df_imports)} rows, columns: {df_imports.columns.tolist()}")
 
         df_imports.to_csv(imports_path, sep='\t', index=False, header=False, encoding='utf-8',
                           lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
-        print(f"[DEBUG] Wrote Source_Imports temp file: {imports_path} ({imports_path.stat().st_size} bytes)")
+        logger.debug(f"Wrote Source_Imports temp file: {imports_path} ({imports_path.stat().st_size} bytes)")
 
         # Select only known columns for mapping (prevents trailing tabs)
         known_cols = [
@@ -111,12 +108,11 @@ def process_etl_config():
         ]
         df_mapping = df_mapping[known_cols].fillna('')
 
-        print(f"[DEBUG] Mapping rows before write: {len(df_mapping)}")
-        print(f"[DEBUG] Mapping columns: {df_mapping.columns.tolist()}")
+        logger.debug(f"Mapping: {len(df_mapping)} rows, columns: {df_mapping.columns.tolist()}")
 
         df_mapping.to_csv(mapping_path, sep='\t', index=False, header=False, encoding='utf-8',
                           lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
-        print(f"[DEBUG] Wrote Mapping temp file: {mapping_path} ({mapping_path.stat().st_size} bytes)")
+        logger.debug(f"Wrote Mapping temp file: {mapping_path} ({mapping_path.stat().st_size} bytes)")
 
         db_cfg = get_db_config()
 
@@ -161,7 +157,7 @@ def process_etl_config():
             max_mapping_change = max_mapping_change_row[0] if max_mapping_change_row else None
 
             if force_ddl or (last_checked is None or (max_mapping_change and max_mapping_change > last_checked)):
-                print(f"[DDL] Mapping changed or forced for {source} - generating DDL")
+                logger.info(f"Mapping changed or forced for {source} - generating DDL")
 
                 source_mapping = df_mapping[df_mapping['Source_Name'] == source].to_dict('records')
 
@@ -171,7 +167,7 @@ def process_etl_config():
                 staging_table, dw_table = row if row else (None, None)
 
                 if not staging_table or not dw_table:
-                    print(f"[SKIP] Missing Staging_Table or DW_Table_Name for {source}")
+                    logger.warning(f"Missing Staging_Table or DW_Table_Name for {source}")
                     continue
 
                 ods_ddl = generate_ods_table_ddl(source, source_mapping)
@@ -185,7 +181,7 @@ def process_etl_config():
 
                 execute_proc('ETL.SP_Update_Source_Imports_Last_Checked', f"@SourceName = '{source}', @LastChecked = '{now_str}'")
             else:
-                print(f"[DDL] No mapping change for {source} - skipping generation")
+                logger.debug(f"No mapping change for {source} - skipping generation")
 
         cursor.close()
         conn.close()
@@ -206,7 +202,7 @@ def process_etl_config():
             pattern=config_filename,
             process_status='Success'
         )
-        print("ETL configuration loaded and merged successfully.")
+        logger.info("ETL configuration loaded and merged successfully.")
 
     except Exception as e:
         end_time = datetime.now()
@@ -227,7 +223,7 @@ def process_etl_config():
         error_log_path = logs_dir / f"etl_errors_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
         with open(error_log_path, "w", encoding="utf-8") as f:
             f.write(f"{datetime.now()}: {str(e)}\n")
-        print(f"Error details saved to: {error_log_path}")
+        logger.error(f"Error details saved to: {error_log_path}")
 
         raise
 
