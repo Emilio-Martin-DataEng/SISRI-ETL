@@ -1,187 +1,102 @@
 # src/etl_orchestrator.py
 
-import argparse
-import logging
 from datetime import datetime
+import argparse
 
-from src.config import get_config
 from src.staging.etl_config import process_etl_config
 from src.staging.source_import import process_source
-from src.utils.db_ops import get_connection, get_next_audit_import_id, log_audit_source_import, execute_proc
-from src.dw.ddl_generator import generate_ddl_for_changed_sources
+from src.utils.db_ops import log_audit_source_import, get_next_audit_import_id, execute_proc, get_connection
+from src.utils.ddl_generator import apply_ddl_from_run
+from src.utils.logging_config import setup_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    filename="logs/etl_orchestrator.log",
-    filemode="a",
-)
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-logging.getLogger("").addHandler(console)
+def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
+    logger = setup_logging("etl_orchestrator")
+    start_time = datetime.now()
+    global_audit_id = get_next_audit_import_id()
+    log_audit_source_import(
+        global_audit_id,
+        source_import_sk=0,
+        start_time=start_time,
+        process_status='Running',
+        pattern='Full ETL Run'
+    )
+    logger.info(f"Full ETL run started at {start_time}")
 
+    if refresh_metadata:
+        logger.info("Refreshing ETL metadata (config load)...")
+        process_etl_config()
+    else:
+        logger.info("Skipping ETL config load (use --refresh-metadata to force)")
 
-def run_config():
-    """Load ETL config, merge to dims; generate DDL if mapping changed."""
-    process_etl_config()
-    changed = generate_ddl_for_changed_sources()
-    if changed:
-        logging.info(f"DDL generated for changed sources: {changed}")
-    return changed
+    if sources is None:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT Source_Name FROM [ETL].[Dim_Source_Imports] WHERE Is_Active = 1 AND Is_Deleted = 0 AND Processing_Order >= 1.0")
+        sources = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
 
+    logger.info(f"Processing {len(sources)} sources (force DDL: {force_ddl}, refresh metadata: {refresh_metadata}).")
 
-def run_staging(specific_sources=None):
-    """Process all data sources (staging). Returns (processed, failed, total_rows)."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT Source_Name, Source_Import_SK
-        FROM ETL.Dim_Source_Imports
-        WHERE Is_Active = 1 AND Is_Deleted = 0
-          AND Source_Name NOT IN ('Source_Imports', 'Source_File_Mapping')
-        ORDER BY Processing_Order ASC
-    """)
-    sources = cursor.fetchall()
-    cursor.close()
-    conn.close()
-
-    processed = []
-    failed = []
     total_rows = 0
-
-    for source_name, source_sk in sources:
-        if specific_sources and source_name not in specific_sources:
-            continue
-        logging.info(f"Processing source: {source_name}")
-        for attempt in range(3):
-            try:
-                rows = process_source(source_name)
-                processed.append(source_name)
-                total_rows += rows or 0
-                break
-            except Exception as e:
-                logging.error(f"Retry {attempt + 1}/3 for {source_name}: {e}")
-                if attempt >= 2:
-                    failed.append(source_name)
-    return processed, failed, total_rows
-
-
-def run_dimension_merges():
-    """Execute SP_Merge_Dim_* for each DW dimension. Returns list of merged sources."""
-    dw_dims = get_config("dw_dimensions") or {}
-    merged = []
-    for source_name, dw_table in dw_dims.items():
+    for source_name in sources:
         try:
-            schema, tbl = dw_table.split(".")
-            proc_name = f"{schema}.SP_Merge_{tbl}"
-            execute_proc(proc_name)
-            merged.append(source_name)
+            rows = process_source(source_name, force_ddl=force_ddl, audit_id=global_audit_id)
+            total_rows += rows
+
+            # Phase 2: Run merge proc
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT Merge_Proc_Name FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source_name)
+            merge_proc_row = cursor.fetchone()
+            merge_proc_name = merge_proc_row[0] if merge_proc_row and merge_proc_row[0] else f"ETL.SP_Merge_Dim_{source_name}"
+            execute_proc(merge_proc_name)
+            logger.debug(f"Merged {source_name} using {merge_proc_name}")
+
+            # Update checkpoint
+            cursor.execute("UPDATE [ETL].[Dim_Source_Imports] SET Last_Successful_Load_Datetime = GETDATE() WHERE Source_Name = ?", source_name)
+            conn.commit()
+            cursor.close()
+            conn.close()
+
         except Exception as e:
-            logging.error(f"Dimension merge failed for {source_name}: {e}")
-            raise
-    return merged
-
-
-def run_full_etl(specific_sources=None, from_step="config"):
-    """
-    Orchestrates ETL. Supports --from config|staging|dims|facts.
-    Each step includes its dependencies.
-    """
-    global_start = datetime.now()
-    global_audit_id = None
-    total_rows = 0
-
-    try:
-        # Config (always first when needed)
-        if from_step in ("config", "staging", "dims", "facts"):
-            logging.info("Step: Config load")
-            run_config()
-
-        if from_step in ("staging", "dims", "facts"):
-            global_audit_id = get_next_audit_import_id()
+            error_summary = str(e).split('\n')[-1] if str(e) else "Unknown error"
             log_audit_source_import(
-                audit_id=global_audit_id,
+                global_audit_id,
                 source_import_sk=0,
-                start_time=global_start,
-                total_row_count=0,
-                total_file_count=0,
-                process_status="Running",
-                pattern="Batch Run",
-            )
-
-            logging.info("Step: Staging")
-            processed, failed, total_rows = run_staging(specific_sources)
-            logging.info(f"Staging done: {processed}, failed: {failed}")
-
-        if from_step in ("dims", "facts"):
-            logging.info("Step: Dimension merges")
-            merged = run_dimension_merges()
-            logging.info(f"Merged dimensions: {merged}")
-
-        if from_step == "facts":
-            logging.info("Step: Fact inserts (not yet implemented)")
-            pass
-
-        if global_audit_id:
-            log_audit_source_import(
-                audit_id=global_audit_id,
-                source_import_sk=0,
-                start_time=global_start,
+                start_time=start_time,
                 end_time=datetime.now(),
-                total_row_count=total_rows,
-                total_file_count=0,
-                exception_detail=None,
-                pattern="Batch Run",
-                process_status="Success",
+                process_status='Failed',
+                exception_detail=f"{source_name} failed: {error_summary}"
             )
+            logger.error(f"{source_name} failed - {error_summary}")
+            logger.error("Stopping execution. Restart from failed source.")
+            break
 
-        logging.info(f"ETL completed in {(datetime.now() - global_start).total_seconds():.2f}s")
+    logger.info("Applying any pending DDL scripts from run/ folder...")
+    apply_ddl_from_run()
 
-    except Exception as e:
-        logging.error(f"ETL failed: {e}")
-        if global_audit_id:
-            log_audit_source_import(
-                audit_id=global_audit_id,
-                source_import_sk=0,
-                start_time=global_start,
-                end_time=datetime.now(),
-                total_row_count=total_rows,
-                total_file_count=0,
-                exception_detail=str(e),
-                process_status="Failed",
-            )
-        raise
-
+    end_time = datetime.now()
+    log_audit_source_import(
+        global_audit_id,
+        source_import_sk=0,
+        start_time=start_time,
+        end_time=end_time,
+        total_row_count=total_rows,
+        total_file_count=len(sources),
+        process_status='Success',
+        pattern='Full ETL Run'
+    )
+    logger.info(f"Full ETL run complete at {end_time}")
+    logger.info(f"Duration: {(end_time - start_time).total_seconds():.2f}s")
+    logger.info(f"Total rows processed: {total_rows}")
+    logger.info(f"Processed sources: {sources}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="SISRI ETL Orchestrator")
-    parser.add_argument(
-        "--from",
-        dest="from_step",
-        choices=["config", "staging", "dims", "facts"],
-        default="staging",
-        help="Start from this step (includes dependencies)",
-    )
-    parser.add_argument("--sources", nargs="*", help="Process only these sources (staging)")
-    parser.add_argument(
-        "--apply-ddl",
-        action="store_true",
-        help="Execute .sql scripts from config/DW_DDL/run/ and archive on success",
-    )
+    parser.add_argument("--sources", nargs="+", default=None, help="Specific sources to process")
+    parser.add_argument("--force-ddl", action="store_true", help="Force DDL generation")
+    parser.add_argument("--refresh-metadata", action="store_true", help="Refresh ETL config tables (Source_Imports & Source_File_Mapping)")
     args = parser.parse_args()
 
-    if args.apply_ddl:
-        from src.dw.script_executor import execute_run_folder_scripts
-
-        ok, errs = execute_run_folder_scripts()
-        if ok:
-            logging.info(f"Executed and archived: {ok}")
-        if errs:
-            for f, e in errs:
-                logging.error(f"{f}: {e}")
-            raise SystemExit(1)
-    else:
-        run_full_etl(
-            specific_sources=args.sources if args.sources else None,
-            from_step=args.from_step,
-        )
+    run_etl(args.sources, args.force_ddl, args.refresh_metadata)

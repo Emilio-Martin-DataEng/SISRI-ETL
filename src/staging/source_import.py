@@ -1,233 +1,221 @@
 # src/staging/source_import.py
 
+import csv
 from pathlib import Path
 import pandas as pd
 from datetime import datetime
-import pyodbc
-import csv
-import shutil
 
-from src.config import BASE_PATH, CONFIG_ROOT, get_db_config, get_config
+from src.config import PROJECT_ROOT, get_config, get_db_config, get_logs_dir
+
+SYSTEM_BASE_PATH = lambda: PROJECT_ROOT
 from src.utils.db import upload_via_bcp
-from src.utils.db_ops import (
-    get_next_audit_import_id,
-    insert_source_file_archive,
-    log_audit_source_import,
-    truncate_table,
-    get_connection,
-    generate_bcp_format_file,
-)
+from src.utils.db_ops import get_connection, execute_proc, truncate_table
+from src.utils.logging_config import setup_logging
+from src.utils.rejected_rows import RejectedRowsHandler
 
-
-def process_source(source_name: str):
-    start_time = datetime.now()
-    audit_id = get_next_audit_import_id()
-    log_audit_source_import(
-        audit_id=audit_id,
-        source_import_sk=0,
-        start_time=start_time,
-        end_time=None,
-        total_row_count=0,
-        total_file_count=0,
-        exception_detail=None,
-        pattern=None,
-        process_status='Started'
-    )
-
-    real_sk = 0  # Default in case of early failure
-
+def generate_bcp_format_file(source_name: str, fmt_path: Path):
+    conn = get_connection()
+    cursor = conn.cursor()
     try:
-        db_cfg = get_db_config()
-        conn_str = (
-            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-            f"SERVER={db_cfg['server']};"
-            f"DATABASE={db_cfg['database']};"
-            f"UID={db_cfg['username']};"
-            f"PWD={db_cfg['password']}"
-        )
-        conn = pyodbc.connect(conn_str)
-        cursor = conn.cursor()
+        # Get all mapping columns + data types in order
+        cursor.execute("""
+            SELECT Target_Column, Data_Type 
+            FROM [ETL].[Dim_Source_Imports_Mapping] 
+            WHERE Source_Name = ? 
+            ORDER BY File_Mapping_SK
+        """, source_name)
+        rows = cursor.fetchall()
+        if not rows:
+            raise ValueError(f"No mapping columns found for source '{source_name}'")
 
-        # Get config
-        cursor.execute("EXEC ETL.SP_Get_Source_Import_Config ?", source_name)
-        row = cursor.fetchone()
-        if not row:
-            raise ValueError(f"No active configuration found for source: {source_name}")
-        
-        rel_path, pattern, sheet_name, table_name = row
+        with open(fmt_path, 'w', encoding='utf-8') as f:
+            f.write("14.0\n")
+            f.write(f"{len(rows) + 1}\n")  # +1 for Inserted_Datetime
 
-        # Get mapping
-        cursor.execute("EXEC ETL.SP_Get_Source_Import_Mapping ?", source_name)
-        mappings = cursor.fetchall()
-        column_map = {m.Source_Column: m.Target_Column for m in mappings}
+            for i, row in enumerate(rows, 1):
+                target_col, data_type = row
+                data_type = data_type.strip().upper()
 
-        # Get real SK
-        cursor.execute("EXEC ETL.SP_Get_Source_Import_SK ?", source_name)
-        row = cursor.fetchone()
-        real_sk = row[0] if row else 0
+                # Parse length from Data_Type
+                if data_type.startswith('VARCHAR('):
+                    length = int(data_type.split('(')[1].split(')')[0])
+                elif data_type == 'BIT':
+                    length = 1
+                else:
+                    length = 8000  # fallback safe max
 
+                terminator = "\t" if i < len(rows) else "\t"
+                collation = "" if 'BIT' in data_type else "SQL_Latin1_General_CP1_CI_AS"
+
+                f.write(f"{i} SQLCHAR 0 {length} \"{terminator}\" {i} {target_col} {collation}\n")
+
+            # Inserted_Datetime (always last, SQLCHAR, empty collation)
+            f.write(f"{len(rows)+1} SQLCHAR 0 30 \"\\r\\n\" {len(rows)+1} Inserted_Datetime \"\"\n")
+
+        logger = setup_logging("source_import")
+        logger.info(f"Generated format file: {fmt_path}")
+        if not fmt_path.exists():
+            logger.error(f"Format file was NOT created despite generation call")
+            raise RuntimeError(f"Failed to create format file: {fmt_path}")
+    finally:
         cursor.close()
         conn.close()
 
-        log_audit_source_import(
-            audit_id=audit_id,
-            source_import_sk=real_sk,
-            start_time=start_time,
-            end_time=None,
-            total_row_count=0,
-            total_file_count=0,
-            exception_detail=f"Processing {source_name}",
-            pattern=pattern,
-            process_status='Processing'
-        )
+def get_source_pk_columns(source_name: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT Source_Column 
+        FROM [ETL].[Dim_Source_Imports_Mapping] 
+        WHERE Source_Name = ? AND Is_PK = 1
+        ORDER BY File_Mapping_SK
+    """, source_name)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return [row[0] for row in rows]
 
-        folder = BASE_PATH() / rel_path
-        all_files = list(folder.glob(pattern))
-        
-        if not all_files:
-            end_time = datetime.now()
-            log_audit_source_import(
-                audit_id=audit_id,
-                source_import_sk=real_sk,
-                start_time=start_time,
-                end_time=end_time,
-                total_row_count=0,
-                total_file_count=0,
-                exception_detail="Nothing to update - no files matched pattern",
-                pattern=pattern,
-                process_status='Skipped'
-            )
-            return
+def process_source(source_name: str, force_ddl: bool = False, audit_id: int = None):
+    # Use the same config folder as etl_config.py
+    config_folder = PROJECT_ROOT / get_config("base", "config_folder")
+    format_dir = config_folder / "format" / "sources"
+    temp_dir = PROJECT_ROOT / "temp"
+    logs_dir = PROJECT_ROOT / get_config("logs", "rel_path")
 
-        dfs = []
-        file_row_counts = []
-        for file in all_files:
-            try:
-                df = pd.read_excel(file, sheet_name=sheet_name, dtype=str)
-                file_rows = len(df)
-                dfs.append(df)
-                file_row_counts.append(file_rows)
-            except Exception as e:
-                file_row_counts.append(0)
-                continue
+    format_dir.mkdir(parents=True, exist_ok=True)
+    temp_dir.mkdir(exist_ok=True)
+    logs_dir.mkdir(exist_ok=True)
 
-        if not dfs:
-            raise ValueError("No valid data loaded from any files.")
+    logger = setup_logging("source_import")
+    logger.info(f"Processing source: {source_name}")
+    
+    # Initialize rejected rows handler
+    rejected_handler = RejectedRowsHandler(source_name, audit_id)
 
-        final_df = pd.concat(dfs, ignore_index=True)
-        final_df = final_df.drop_duplicates()
+    # === Get absolute root for RAW DATA from YAML ===
+    raw_root = get_config("base", "file_root")
+    logger.debug(f"Using data root from config: {raw_root}")
 
-        if column_map:
-            final_df = final_df.rename(columns=column_map)
-
-        if 'Inserted_Datetime' in final_df.columns:
-            final_df = final_df.drop(columns=['Inserted_Datetime'])
-
-        insert_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.000')
-        final_df['Inserted_Datetime'] = insert_timestamp
-
-        expected_cols = list(column_map.values()) + ['Inserted_Datetime']
-        final_df = final_df[expected_cols]
-
-        temp_dir = Path("temp")
-        temp_dir.mkdir(exist_ok=True)
-        output_path = temp_dir / f"{source_name.lower()}_stg.txt"
-
-        final_df.to_csv(
-            output_path,
-            sep='\t',
-            index=False,
-            header=False,
-            encoding='utf-8',
-            lineterminator='\r\n',
-            quoting=csv.QUOTE_NONE,
-            escapechar='\\',
-            na_rep=''
-        )
-
-        format_dir = CONFIG_ROOT / "format"
-        format_dir.mkdir(parents=True, exist_ok=True)
-        format_path = format_dir / f"{source_name.lower()}.fmt"
-
-        # Auto-generate (or refresh) BCP format file based on metadata
-        generate_bcp_format_file(source_name, str(format_path))
-
-        truncate_table(table_name)
-
-        upload_via_bcp(
-            file_path=output_path,
-            table=table_name,
-            db_config=db_cfg,
-            format_file=str(format_path),
-            first_row=1
-        )
-
-        # === ARCHIVING + LINEAGE ===
-        archive_base = BASE_PATH() / "archive" / "raw" / datetime.now().strftime("%Y-%m-%d")
-        archive_dir = archive_base / source_name
-        archive_dir.mkdir(parents=True, exist_ok=True)
-
-        timestamp_suffix = datetime.now().strftime("_%Y%m%d_%H%M%S")
-        conn = pyodbc.connect(conn_str)
-        cursor = conn.cursor()
-
-        total_file_count = len(all_files)
-        total_row_count = len(final_df)
-
-        for idx, file in enumerate(all_files):
-            archive_filename = file.stem + timestamp_suffix + file.suffix
-            archive_path = archive_dir / archive_filename
-            shutil.copy(str(file), str(archive_path))
-
-            new_archive_sk = insert_source_file_archive(
-                    audit_id=audit_id,
-                    source_import_sk=real_sk,
-                    original_file_name=file.name,
-                    archive_file_name=archive_filename,
-                    archive_full_path=str(archive_path),
-                    file_row_count=file_row_counts[idx],
-                    process_status='Success'
-            )
-
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-        # === SUCCESS AUDIT ===
-        end_time = datetime.now()
-        log_audit_source_import(
-            audit_id=audit_id,
-            source_import_sk=real_sk,
-            start_time=start_time,
-            end_time=end_time,
-            total_row_count=total_row_count,
-            total_file_count=total_file_count,
-            exception_detail=f"Processed {total_file_count} files, total rows: {total_row_count}",
-            pattern=pattern,
-            process_status='Success'
-        )
-
-        return total_row_count
-
+    # === Get source metadata ===
+    source_config_path = PROJECT_ROOT / get_config("base", "config_folder") / get_config("base", "config_filename")
+    try:
+        source_config = pd.read_excel(source_config_path, sheet_name="Source_Imports", dtype=str)
     except Exception as e:
-        end_time = datetime.now()
-        log_audit_source_import(
-            audit_id=audit_id,
-            source_import_sk=real_sk,
-            start_time=start_time,
-            end_time=end_time,
-            total_row_count=0,
-            total_file_count=0,
-            exception_detail=str(e),
-            pattern=pattern,
-            process_status='Failed'
-        )
-        return 0
-        raise
+        raise ValueError(f"Failed to read Source_Imports sheet: {str(e)}")
 
+    source_row = source_config[source_config['Source_Name'] == source_name]
+    if source_row.empty:
+        raise ValueError(f"No row in Source_Imports for '{source_name}'")
+    source_row = source_row.iloc[0]
 
-if __name__ == "__main__":
-    # process_source("Source_Imports")
-    # process_source("Source_File_Mapping")
+    rel_path = source_row['Rel_Path'].strip().lstrip('/\\')
+    pattern = source_row['Pattern'] or "*.xlsx"
+    sheet_name = source_row['Sheet_Name'] or "Sheet1"
 
-    process_source("Principals")
+    # === Build absolute data directory ===
+    data_dir = Path(raw_root) / rel_path
+    logger.info(f"Data directory: {data_dir}, Pattern: {pattern}, Sheet: {sheet_name}")
+
+    # === Format file ===
+    fmt_path = format_dir / f"{source_name.lower()}.fmt"
+    if force_ddl or not fmt_path.exists():
+        logger.info(f"{'Regenerating' if force_ddl else 'Generating'} format file for {source_name}...")
+        generate_bcp_format_file(source_name, fmt_path)
+
+    # === Find raw files ===
+    files = list(data_dir.glob(pattern))
+    if not files:
+        logger.warning(f"No files found in {data_dir} with pattern {pattern}")
+        files = list(data_dir.glob("*.xlsx"))
+        if not files:
+            logger.error(f"No .xlsx files found in {data_dir} — check Rel_Path and file_root")
+            return 0
+
+    logger.info(f"Found {len(files)} files to process")
+
+    total_rows = 0
+    rejected_count = 0
+
+    pk_cols = get_source_pk_columns(source_name)
+
+    for file_path in files:
+        logger.info(f"Processing file: {file_path.name}")
+
+        try:
+            logger.debug(f"Reading sheet '{sheet_name}' from {file_path.name}")
+            df = pd.read_excel(file_path, sheet_name=sheet_name, dtype=str)
+            logger.debug(f"Excel read successful: {len(df)} rows, columns: {list(df.columns)}")
+
+            # Sanitize
+            df = df.apply(lambda x: x.astype(str).str.replace(r'[\n\r\t\\]', ' ', regex=True).str.strip())
+            df = df.apply(lambda x: x.str.replace(r'\s+', ' ', regex=True).str.strip())
+
+            if pk_cols:
+                rename_map = {}
+                for raw_col in df.columns:
+                    clean_col = raw_col.replace(' ', '_').strip()
+                    if clean_col in pk_cols:
+                        rename_map[raw_col] = clean_col
+                
+                if rename_map:
+                    df = df.rename(columns=rename_map)
+                    logger.debug(f"Auto-renamed columns for dedup: {rename_map}")
+
+                # Enhanced duplicate detection and handling
+                missing_pk = [col for col in pk_cols if col not in df.columns]
+                if missing_pk:
+                    logger.warning(f"Missing PK columns after rename: {missing_pk}")
+                else:
+                    # Identify duplicates before removing them
+                    duplicates_mask = df.duplicated(subset=pk_cols, keep=False)
+                    duplicates_df = df[duplicates_mask].copy()
+                    
+                    if not duplicates_df.empty:
+                        # Log all duplicate records (including the ones we'll keep)
+                        rejected_handler.log_duplicate_rows(file_path.name, duplicates_df, pk_cols)
+                        
+                        # Keep only first occurrence (Kimball best practice)
+                        df_clean = df.drop_duplicates(subset=pk_cols, keep='first')
+                        dup_count = len(df) - len(df_clean)
+                        logger.info(f"Identified {len(duplicates_df)} duplicate records, keeping {len(df_clean)} unique records")
+                        df = df_clean
+
+            df['Inserted_Datetime'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+            temp_flat = temp_dir / f"{source_name}_{file_path.stem}_cleaned.txt"
+            df.to_csv(temp_flat, sep='\t', index=False, header=False, encoding='utf-8', lineterminator='\r\n',
+                    quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
+
+            bcp_log = logs_dir / f"bcp_errors_{source_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+            truncate_table(f"ODS.{source_name}")
+            upload_via_bcp(temp_flat, f"ODS.{source_name}", get_db_config(), str(fmt_path), 1)
+
+            if bcp_log.exists() and bcp_log.stat().st_size > 0:
+                with open(bcp_log, 'r') as f:
+                    log_content = f.read()
+                    logger.warning(f"BCP rejects for {file_path.name}: {len(log_content)} chars")
+                    
+                    # Use rejected handler for BCP errors
+                    rejected_handler.log_bcp_rejected_rows(file_path.name, log_content)
+                    rejected_count += 1
+
+            total_rows += len(df)
+
+        except Exception as e:
+            logger.error(f"Error processing {file_path.name}: {str(e)}")
+            import traceback
+            full_tb = traceback.format_exc()
+            logger.debug(f"Full traceback:\n{full_tb}")
+            
+            # Log processing error using rejected handler
+            raw_data = {
+                "error": str(e),
+                "traceback": full_tb,
+                "file_name": file_path.name
+            }
+            rejected_handler.log_rejected_row(file_path.name, 0, f"PROCESSING_ERROR: {str(e)[:200]}", raw_data)
+
+    # Get final rejected count from database
+    final_rejected_count = rejected_handler.get_rejected_count()
+    logger.info(f"Completed {source_name}: {total_rows} rows loaded, {final_rejected_count} rows rejected")
+    return total_rows

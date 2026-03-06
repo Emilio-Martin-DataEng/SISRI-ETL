@@ -3,7 +3,8 @@
 from datetime import datetime
 from pathlib import Path
 
-from src.config import SYSTEM_BASE_PATH
+from src.config import PROJECT_ROOT
+SYSTEM_BASE_PATH = lambda: PROJECT_ROOT
 from src.utils.db_ops import get_connection, log_audit_source_import, get_next_audit_import_id, execute_proc
 
  

@@ -8,4 +8,4 @@
 6       SQLCHAR             0       50      "\t"       6     Processing_Order                       SQL_Latin1_General_CP1_CI_AS
 7       SQLCHAR             0       50      "\t"       7     Is_Active                              SQL_Latin1_General_CP1_CI_AS
 8       SQLCHAR             0       500     "\t"       8     Description                            SQL_Latin1_General_CP1_CI_AS
-9       SQLCHAR             0       24      "\r\n"     9     Inserted_Datetime                      ""
+9       SQLCHAR             0       30      "\r\n"     9     Inserted_Datetime                      ""
