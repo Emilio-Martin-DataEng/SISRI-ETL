@@ -9,57 +9,10 @@ from src.config import PROJECT_ROOT, get_config, get_db_config, get_logs_dir
 
 SYSTEM_BASE_PATH = lambda: PROJECT_ROOT
 from src.utils.db import upload_via_bcp
-from src.utils.db_ops import get_connection, execute_proc, truncate_table
+from src.utils.db_ops import generate_bcp_format_file, get_connection, execute_proc, truncate_table
 from src.utils.logging_config import setup_logging
 from src.utils.rejected_rows import RejectedRowsHandler
 
-def generate_bcp_format_file(source_name: str, fmt_path: Path):
-    conn = get_connection()
-    cursor = conn.cursor()
-    try:
-        # Get all mapping columns + data types in order
-        cursor.execute("""
-            SELECT Target_Column, Data_Type 
-            FROM [ETL].[Dim_Source_Imports_Mapping] 
-            WHERE Source_Name = ? 
-            ORDER BY File_Mapping_SK
-        """, source_name)
-        rows = cursor.fetchall()
-        if not rows:
-            raise ValueError(f"No mapping columns found for source '{source_name}'")
-
-        with open(fmt_path, 'w', encoding='utf-8') as f:
-            f.write("14.0\n")
-            f.write(f"{len(rows) + 1}\n")  # +1 for Inserted_Datetime
-
-            for i, row in enumerate(rows, 1):
-                target_col, data_type = row
-                data_type = data_type.strip().upper()
-
-                # Parse length from Data_Type
-                if data_type.startswith('VARCHAR('):
-                    length = int(data_type.split('(')[1].split(')')[0])
-                elif data_type == 'BIT':
-                    length = 1
-                else:
-                    length = 8000  # fallback safe max
-
-                terminator = "\t" if i < len(rows) else "\t"
-                collation = "" if 'BIT' in data_type else "SQL_Latin1_General_CP1_CI_AS"
-
-                f.write(f"{i} SQLCHAR 0 {length} \"{terminator}\" {i} {target_col} {collation}\n")
-
-            # Inserted_Datetime (always last, SQLCHAR, empty collation)
-            f.write(f"{len(rows)+1} SQLCHAR 0 30 \"\\r\\n\" {len(rows)+1} Inserted_Datetime \"\"\n")
-
-        logger = setup_logging("source_import")
-        logger.info(f"Generated format file: {fmt_path}")
-        if not fmt_path.exists():
-            logger.error(f"Format file was NOT created despite generation call")
-            raise RuntimeError(f"Failed to create format file: {fmt_path}")
-    finally:
-        cursor.close()
-        conn.close()
 
 def get_source_pk_columns(source_name: str):
     conn = get_connection()

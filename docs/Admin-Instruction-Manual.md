@@ -19,10 +19,10 @@ The SISRI ETL system loads Excel data into a SQL Server data warehouse. It has t
 Excel files in correct folders (defined in ETL_Config.xlsx)
 
 1. Activate the Environment
-Bashvenv312\Scripts\activate
+venv312\Scripts\activate
 2. Refresh Metadata
 (Required after changing ETL_Config.xlsx – mapping, new sources, paths, etc.)
-Bashpython -m src.staging.etl_config
+python -m src.staging.etl_config
 What it does:
 
 Checks for ETL_Config.xlsx
@@ -34,7 +34,7 @@ Logs success or graceful skip
 
 3. Run Normal ETL Load
 Basic command (processes all active business sources):
-Bashpython -m src.etl_orchestrator
+python -m src.etl_orchestrator
 Common options
 
 

@@ -23,6 +23,8 @@ from src.utils.db_ops import (
 from src.utils.ddl_generator import apply_ddl_from_run, generate_ods_table_ddl, generate_dw_table_ddl, generate_merge_proc_ddl
 from src.utils.logging_config import setup_logging
 
+CONFIG_ROOT = Path(get_config("base", "config_folder", "config"))
+
 def process_etl_config():
     logger = setup_logging("etl_config")
     start_time = datetime.now()
