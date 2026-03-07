@@ -1,12 +1,35 @@
-.venv
+# Virtual environments
+venv*/
+.venv/
+
+# Python cache
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Temp / generated
 temp/
 logs/
-archive/
-.venv/
-DW_DDL/
-.pytest_cache/
 rejected/
+archive/
+config/format/sources/*.fmt
+DW_DDL/generated/
+DW_DDL/run/
+DW_DDL/archive/
+*.bak
+*.log
+*.tmp
+errors.log
+.pytest_cache/
+fake.fmt
 
+# IDE / editor
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
 
+# OS files
+.DS_Store
+Thumbs.db
