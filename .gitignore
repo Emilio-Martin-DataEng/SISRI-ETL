@@ -1,6 +1,7 @@
 # Virtual environments
 venv*/
 .venv/
+venv312/
 
 # Python cache
 __pycache__/
@@ -13,16 +14,16 @@ temp/
 logs/
 rejected/
 archive/
-config/format/sources/*.fmt
 DW_DDL/generated/
 DW_DDL/run/
 DW_DDL/archive/
-*.bak
-*.log
-*.tmp
-errors.log
+DW_DDL/state/
+config/format/sources/*.fmt      # per-source BCP formats (regenerateable)
+fake.fmt                         # test artifact
+
+# Test & cache folders
 .pytest_cache/
-fake.fmt
+tests/__pycache__/
 
 # IDE / editor
 .vscode/
@@ -33,3 +34,16 @@ fake.fmt
 # OS files
 .DS_Store
 Thumbs.db
+*.bak
+*.tmp
+*.log
+errors.log
+
+# Keep these tracked (do NOT ignore)
+!docs/
+!tests/
+!pytest.ini
+!requirements.txt
+!config/config.yaml
+!config/etl_config.xlsx
+!src/
