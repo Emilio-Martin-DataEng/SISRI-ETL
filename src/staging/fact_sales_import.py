@@ -49,8 +49,12 @@ def process_fact_sales(source_name: str, force_ddl: bool = False, audit_id: int 
         logger.error(f"CRITICAL: No row found in [ETL].[Dim_Source_Imports] for Source_Name = '{source_name}'")
         logger.error("Check: Is_Active=1, Is_Deleted=0, correct Source_Name spelling/case")
         return 0
-
-    rel_path, pattern, sheet_name, staging_table = row
+    
+    # Safe unpack with None checking
+    rel_path = row[0] if row[0] is not None else None
+    pattern = row[1] if row[1] is not None else None
+    sheet_name = row[2] if row[2] is not None else None
+    staging_table = row[3] if row[3] is not None else None
 
     # Add debug so we see exactly what is fetched
     logger.debug(f"Config loaded for {source_name}:")
@@ -64,7 +68,6 @@ def process_fact_sales(source_name: str, force_ddl: bool = False, audit_id: int 
         return 0
 
  
-    
     pattern = pattern or "*.xlsx"
     sheet_name = sheet_name or "Sheet1"
     staging_table = staging_table or f"ODS.{source_name}"  # fallback
@@ -95,12 +98,39 @@ def process_fact_sales(source_name: str, force_ddl: bool = False, audit_id: int 
             df = pd.read_excel(file_path, sheet_name=sheet_name, dtype=str)
             logger.debug(f"Read {len(df)} rows from {file_path.name}")
 
-            # Basic cleaning (same as source_import)
-            df = df.apply(lambda x: x.astype(str).str.replace(r'[\n\r\t\\]', ' ', regex=True).str.strip())
-            df = df.apply(lambda x: x.str.replace(r'\s+', ' ', regex=True).str.strip())
+            # Fix column names with encoding issues first
+            df.columns = [col.encode('utf-8', errors='ignore').decode('utf-8') for col in df.columns]
+            df.columns = [col.replace('Ð¡', 'Co') for col in df.columns]  # Fix specific encoding issue
+            logger.debug(f"Cleaned column names: {list(df.columns)}")
+            
+            # Enhanced cleaning with character encoding fix
+            for col in df.columns:
+                # Convert to string first
+                df[col] = df[col].astype(str)
+                # Then apply string operations
+                df[col] = df[col].str.encode('utf-8', errors='ignore').str.decode('utf-8')
+                df[col] = df[col].str.replace(r'[\n\r\t\\\\]', ' ', regex=True).str.strip()
+                df[col] = df[col].str.replace(r'\s+', ' ', regex=True).str.strip()
+            
+            # Enhanced date validation and cleaning for fact tables
+            date_columns = [col for col in df.columns if 'date' in col.lower() or 'day' in col.lower()]
+            for col in date_columns:
+                if col in df.columns:
+                    # Try to parse dates and standardize
+                    df[col] = pd.to_datetime(df[col], errors='coerce', dayfirst=True)
+                    # Convert back to consistent string format for BCP
+                    df[col] = df[col].dt.strftime('%d-%m-%Y')
+                    logger.debug(f"Standardized dates in {col}: {df[col].dropna().unique()[:5].tolist()}")
+            
+            # Treat dates as text for now (per user request)
+            date_columns = [col for col in df.columns if 'date' in col.lower() or 'day' in col.lower()]
+            for col in date_columns:
+                if col in df.columns:
+                    df[col] = df[col].astype(str)
+                    logger.debug(f"Treated {col} as text field: {df[col].dropna().unique()[:3].tolist()}")
 
-            df['SourceFileName'] = str(file_path.absolute())
-            df['LoadTimestamp'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            # Add proper datetime for BCP (use standard SQL datetime format)
+            df['Inserted_Datetime'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             logger.debug("Starting BCP prep for file: " + str(file_path))
             # Temp TXT for BCP
             temp_flat = temp_dir / f"{source_name}_{file_path.stem}_cleaned.txt"
@@ -124,7 +154,8 @@ def process_fact_sales(source_name: str, force_ddl: bool = False, audit_id: int 
             # BCP upload
             logger.debug(f"Starting BCP upload to {staging_table} using fmt {fmt_path}")
             bcp_log = logs_dir / f"bcp_errors_{source_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-            upload_via_bcp(temp_flat, staging_table, get_config("db"), str(fmt_path), 1)
+            from src.config import get_db_config
+            upload_via_bcp(temp_flat, staging_table, get_db_config(), str(fmt_path), 1)
             logger.debug("BCP upload complete")
 
             # Handle BCP rejects (same as source_import)
