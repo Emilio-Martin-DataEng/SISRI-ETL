@@ -16,6 +16,80 @@ from src.utils.rejected_rows import RejectedRowsHandler
 
 logger = logging.getLogger(__name__)
 
+def validate_and_clean_data(df: pd.DataFrame, source_name: str, file_path: str) -> tuple:
+    """
+    Validate data types based on mapping table and clean/reject non-conforming rows.
+    Returns tuple of (cleaned_df, rejected_rows_count)
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get mapping data types
+        cursor.execute("""
+            SELECT Target_Column, Data_Type
+            FROM ETL.Dim_Source_Imports_Mapping
+            WHERE Source_Name = ?
+              AND Is_Deleted = 0
+            ORDER BY File_Mapping_SK
+        """, source_name)
+        mapping_rows = cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+    
+    if not mapping_rows:
+        raise ValueError(f"No mapping found for source: {source_name}")
+    
+    # Create validation rules
+    validation_rules = {}
+    for target_column, data_type in mapping_rows:
+        validation_rules[target_column] = data_type
+    
+    # Validate each column
+    rejected_count = 0
+    original_count = len(df)
+    
+    for column, expected_type in validation_rules.items():
+        if column not in df.columns:
+            continue
+            
+        if expected_type.startswith('VARCHAR'):
+            # Check max length
+            max_length = int(expected_type.split('(')[1].split(')')[0])
+            # Truncate if too long
+            df[column] = df[column].astype(str).str[:max_length]
+            
+        elif expected_type.startswith('DECIMAL'):
+            # Convert to decimal, reject invalid values
+            try:
+                # Remove non-numeric characters except decimal point
+                df[column] = df[column].astype(str).str.replace(r'[^0-9.]', '', regex=True)
+                # Convert to numeric, set invalid to NaN
+                df[column] = pd.to_numeric(df[column], errors='coerce')
+                # Count invalid rows
+                invalid_mask = df[column].isna() & (df[column].astype(str) != 'nan')
+                rejected_count += invalid_mask.sum()
+                # Fill NaN with 0 for now (could be rejected instead)
+                df[column] = df[column].fillna(0)
+            except Exception as e:
+                logger.warning(f"Error validating {column}: {e}")
+                
+        elif expected_type == 'INT':
+            # Convert to integer, reject invalid values
+            try:
+                df[column] = df[column].astype(str).str.replace(r'[^0-9-]', '', regex=True)
+                df[column] = pd.to_numeric(df[column], errors='coerce')
+                invalid_mask = df[column].isna() & (df[column].astype(str) != 'nan')
+                rejected_count += invalid_mask.sum()
+                df[column] = df[column].fillna(0).astype(int)
+            except Exception as e:
+                logger.warning(f"Error validating {column}: {e}")
+    
+    logger.info(f"Data validation: {original_count} rows processed, {rejected_count} rows rejected")
+    return df, rejected_count
+
+
 def process_fact_sales(source_name: str, force_ddl: bool = False, audit_id: int = None):
     logger.info(f"Starting Fact_Sales processing for source: {source_name}")
     start_time = datetime.now()
@@ -111,6 +185,10 @@ def process_fact_sales(source_name: str, force_ddl: bool = False, audit_id: int 
                 df[col] = df[col].str.encode('utf-8', errors='ignore').str.decode('utf-8')
                 df[col] = df[col].str.replace(r'[\n\r\t\\\\]', ' ', regex=True).str.strip()
                 df[col] = df[col].str.replace(r'\s+', ' ', regex=True).str.strip()
+            
+            # Apply datatype validation and cleaning
+            df, validation_rejected = validate_and_clean_data(df, source_name, file_path.name)
+            logger.debug(f"Validation rejected {validation_rejected} rows from {file_path.name}")
             
             # Enhanced date validation and cleaning for fact tables
             date_columns = [col for col in df.columns if 'date' in col.lower() or 'day' in col.lower()]
