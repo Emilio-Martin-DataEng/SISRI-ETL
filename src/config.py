@@ -41,6 +41,9 @@ class Config:
                 return d
 
         cls._data = interpolate(raw)
+        #print("[DEBUG] Loaded config:", cls._data)
+        if not cls._data:
+            print("[ERROR] Config data is empty after load!")
 
     @classmethod
     def get(cls, *keys, default=None):
@@ -50,10 +53,12 @@ class Config:
         data = cls._data
         for key in keys:
             if isinstance(data, dict):
-                data = data.get(key, default)
+                data = data.get(key)
+                if data is None:
+                    return default
             else:
                 return default
-        return data
+        return data if data is not None else default
 
     @classmethod
     def db_config(cls):

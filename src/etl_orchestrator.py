@@ -6,7 +6,7 @@ import argparse
 from src.staging.etl_config import process_etl_config
 from src.staging.source_import import process_source
 from src.utils.db_ops import log_audit_source_import, get_next_audit_import_id, execute_proc, get_connection
-from src.utils.ddl_generator import apply_ddl_from_run
+from src.utils.ddl_generator import apply_ddl_from_run, generate_dw_table_ddl, generate_ods_table_ddl
 from src.utils.logging_config import setup_logging
 
 def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
@@ -22,11 +22,12 @@ def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
     )
     logger.info(f"Full ETL run started at {start_time}")
 
-    if refresh_metadata:
+    if refresh_metadata or force_ddl:
         logger.info("Refreshing ETL metadata (config load)...")
-        process_etl_config()
+        process_etl_config(force_ddl=force_ddl)  # ← pass the flag
     else:
         logger.info("Skipping ETL config load (use --refresh-metadata to force)")
+
 
     if sources is None:
         conn = get_connection()

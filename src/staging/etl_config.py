@@ -23,9 +23,10 @@ from src.utils.db_ops import (
 from src.utils.ddl_generator import apply_ddl_from_run, generate_ods_table_ddl, generate_dw_table_ddl, generate_merge_proc_ddl
 from src.utils.logging_config import setup_logging
 
-CONFIG_ROOT = Path(get_config("base", "config_folder", "config"))
+CONFIG_ROOT = Path(get_config("base", "config_folder", default="config"))
 
-def process_etl_config():
+def process_etl_config(force_ddl: bool = False):
+    # ... existing code ...
     logger = setup_logging("etl_config")
     start_time = datetime.now()
     config_source_sk = get_source_import_sk('Source_Imports')
@@ -33,6 +34,14 @@ def process_etl_config():
         logger.warning("No Source_Import_SK for 'Source_Imports' - using 0")
 
     audit_id = get_next_audit_import_id()
+
+    # Define config root early with safe default
+    config_folder = get_config("base", "config_folder")
+    if config_folder is None:
+        config_folder = "config"
+        print("[WARNING] 'config_folder' not found in config - using default 'config'")
+    
+    CONFIG_ROOT = Path(config_folder)
 
     log_audit_source_import(
         audit_id=audit_id,
@@ -48,9 +57,8 @@ def process_etl_config():
     logger.info(f"Started audit entry: Audit_Source_Import_SK = {audit_id} (linked to Source_Import_SK = {config_source_sk})")
 
     try:
-        config_folder = PROJECT_ROOT / get_config("base", "config_folder")
         config_filename = get_config("base", "config_filename")
-        config_files = list(config_folder.glob(config_filename))
+        config_files = list(CONFIG_ROOT.glob(config_filename))
 
         if not config_files:
             end_time = datetime.now()
@@ -70,7 +78,7 @@ def process_etl_config():
 
         config_file = config_files[0]
         logger.info(f"Loading config from: {config_file}")
-        format_dir = config_folder / "format"
+        format_dir = CONFIG_ROOT / "format"
         format_system_dir = format_dir / "system"
 
         format_imports = format_system_dir / "source_imports.fmt"
@@ -146,7 +154,7 @@ def process_etl_config():
             # Get force flag
             cursor.execute("SELECT Force_DDL_Generation FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source)
             force_row = cursor.fetchone()
-            force_ddl = force_row[0] if force_row else 0
+            #force_ddl = force_row[0] if force_row else 0
 
             cursor.execute("EXEC [ETL].[SP_Get_Source_Imports_Last_Checked] ?", source)
             last_checked_row = cursor.fetchone()
@@ -160,8 +168,8 @@ def process_etl_config():
             max_mapping_change_row = cursor.fetchone()
             max_mapping_change = max_mapping_change_row[0] if max_mapping_change_row else None
 
-            if force_ddl or (last_checked is None or (max_mapping_change and max_mapping_change > last_checked)):
-                logger.info(f"Mapping changed or forced for {source} - generating DDL")
+            if force_ddl or force_row[0] or (last_checked is None or (max_mapping_change and max_mapping_change > last_checked)):
+                logger.info(f"{'Forced DDL (--force-ddl)' if force_ddl else 'Mapping changed or forced'} for {source} - generating DDL")
 
                 source_mapping = df_mapping[df_mapping['Source_Name'] == source].to_dict('records')
 

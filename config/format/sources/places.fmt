@@ -1,19 +1,19 @@
 14.0
 17
-1 SQLCHAR 0 255 "	" 1 Place_Code SQL_Latin1_General_CP1_CI_AS
-2 SQLCHAR 0 255 "	" 2 Place_Name SQL_Latin1_General_CP1_CI_AS
-3 SQLCHAR 0 255 "	" 3 Place_Category SQL_Latin1_General_CP1_CI_AS
-4 SQLCHAR 0 255 "	" 4 Place_Sub_Category SQL_Latin1_General_CP1_CI_AS
-5 SQLCHAR 0 255 "	" 5 Place_Chain SQL_Latin1_General_CP1_CI_AS
-6 SQLCHAR 0 255 "	" 6 Place_Address SQL_Latin1_General_CP1_CI_AS
-7 SQLCHAR 0 255 "	" 7 Place_City SQL_Latin1_General_CP1_CI_AS
-8 SQLCHAR 0 255 "	" 8 Place_Province SQL_Latin1_General_CP1_CI_AS
-9 SQLCHAR 0 255 "	" 9 Place_Country SQL_Latin1_General_CP1_CI_AS
-10 SQLCHAR 0 255 "	" 10 Place_Latitude SQL_Latin1_General_CP1_CI_AS
-11 SQLCHAR 0 255 "	" 11 Place_Longitude SQL_Latin1_General_CP1_CI_AS
-12 SQLCHAR 0 255 "	" 12 Place_Contact_Number SQL_Latin1_General_CP1_CI_AS
-13 SQLCHAR 0 255 "	" 13 Place_Contact_Name SQL_Latin1_General_CP1_CI_AS
-14 SQLCHAR 0 255 "	" 14 Place_Contact_Title SQL_Latin1_General_CP1_CI_AS
-15 SQLCHAR 0 255 "	" 15 Place_Contact_Email SQL_Latin1_General_CP1_CI_AS
-16 SQLCHAR 0 255 "	" 16 Place_Website SQL_Latin1_General_CP1_CI_AS
-17 SQLCHAR 0 30 "\r\n" 17 Inserted_Datetime ""
+1	SQLCHAR	0	500	"\t"	1	Place_Code	SQL_Latin1_General_CP1_CI_AS
+2	SQLCHAR	0	500	"\t"	2	Place_Name	SQL_Latin1_General_CP1_CI_AS
+3	SQLCHAR	0	500	"\t"	3	Place_Category	SQL_Latin1_General_CP1_CI_AS
+4	SQLCHAR	0	500	"\t"	4	Place_Sub_Category	SQL_Latin1_General_CP1_CI_AS
+5	SQLCHAR	0	500	"\t"	5	Place_Chain	SQL_Latin1_General_CP1_CI_AS
+6	SQLCHAR	0	500	"\t"	6	Place_Address	SQL_Latin1_General_CP1_CI_AS
+7	SQLCHAR	0	500	"\t"	7	Place_City	SQL_Latin1_General_CP1_CI_AS
+8	SQLCHAR	0	500	"\t"	8	Place_Province	SQL_Latin1_General_CP1_CI_AS
+9	SQLCHAR	0	500	"\t"	9	Place_Country	SQL_Latin1_General_CP1_CI_AS
+10	SQLCHAR	0	500	"\t"	10	Place_Latitude	SQL_Latin1_General_CP1_CI_AS
+11	SQLCHAR	0	500	"\t"	11	Place_Longitude	SQL_Latin1_General_CP1_CI_AS
+12	SQLCHAR	0	500	"\t"	12	Place_Contact_Number	SQL_Latin1_General_CP1_CI_AS
+13	SQLCHAR	0	500	"\t"	13	Place_Contact_Name	SQL_Latin1_General_CP1_CI_AS
+14	SQLCHAR	0	500	"\t"	14	Place_Contact_Title	SQL_Latin1_General_CP1_CI_AS
+15	SQLCHAR	0	500	"\t"	15	Place_Contact_Email	SQL_Latin1_General_CP1_CI_AS
+16	SQLCHAR	0	500	"\t"	16	Place_Website	SQL_Latin1_General_CP1_CI_AS
+17	SQLCHAR	0	30	"\r\n"	17	Inserted_Datetime	SQL_Latin1_General_CP1_CI_AS
