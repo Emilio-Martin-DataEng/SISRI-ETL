@@ -25,6 +25,7 @@ from src.utils.ddl_generator import (
     generate_ods_table_ddl,
     generate_dw_table_ddl,
     generate_merge_proc_ddl
+    #generate_fact_to_conformed_merge_ddl   # Assumes this exists in ddl_generator.py
 )
 from src.utils.logging_config import setup_logging
 
@@ -42,8 +43,8 @@ def process_etl_config(force_ddl: bool = False):
     config_folder = get_config("base", "config_folder")
     if config_folder is None:
         config_folder = "config"
-        print("[WARNING] 'config_folder' not found in config - using default 'config'")
-    
+        logger.warning("'config_folder' not found in config - using default 'config'")
+
     CONFIG_ROOT = Path(config_folder)
 
     log_audit_source_import(
@@ -87,29 +88,31 @@ def process_etl_config(force_ddl: bool = False):
 
         format_imports = format_system_dir / "source_imports.fmt"
         format_mapping = format_system_dir / "source_file_mapping.fmt"
-        format_conformed = format_system_dir / "fact_conformed_mapping.fmt"  # NEW
+        format_conformed = format_system_dir / "dw_mapping_and_transformations.fmt"
 
         format_dir.mkdir(parents=True, exist_ok=True)
         format_system_dir.mkdir(parents=True, exist_ok=True)
 
-        # Load existing sheets
+        # Load sheets
         df_imports = pd.read_excel(config_file, sheet_name="Source_Imports", dtype=str)
         df_mapping = pd.read_excel(config_file, sheet_name="Source_File_Mapping", dtype=str)
-        
-        # NEW: Load the Fact_Conformed_Mapping sheet
-        try:
-            df_conformed_mapping = pd.read_excel(config_file, sheet_name="Fact_Conformed_Mapping", dtype=str)
-            logger.info(f"Loaded Fact_Conformed_Mapping sheet with {len(df_conformed_mapping)} rows")
-        except ValueError:
-            df_conformed_mapping = pd.DataFrame()  # empty if sheet missing
-            logger.warning("Fact_Conformed_Mapping sheet not found - skipping load")
 
-        # Aggressive trimming (same as before)
+        try:
+            df_conformed_mapping = pd.read_excel(config_file, sheet_name="DW_Mapping_And_Transformations", dtype=str)
+            logger.info(f"Loaded DW_Mapping_And_Transformations sheet with {len(df_conformed_mapping)} rows")
+        except ValueError:
+            df_conformed_mapping = pd.DataFrame()
+            logger.warning("DW_Mapping_And_Transformations sheet not found - skipping load")
+
+        # Trim strings
         for df in [df_imports, df_mapping, df_conformed_mapping]:
-            string_cols = df.select_dtypes(include=['object']).columns
-            df[string_cols] = df[string_cols].apply(
-                lambda x: x.str.strip().replace(r'[\s\xa0\t\r\n]+', ' ', regex=True).str.strip()
-            )
+            if df.empty:
+                continue
+            string_cols = df.select_dtypes(include=['object', 'string']).columns
+            if not string_cols.empty:
+                df[string_cols] = df[string_cols].apply(
+                    lambda x: x.str.strip().replace(r'[\s\xa0\t\r\n]+', ' ', regex=True).str.strip()
+                )
 
         now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         df_imports['Inserted_Datetime'] = now_str
@@ -122,49 +125,43 @@ def process_etl_config(force_ddl: bool = False):
 
         imports_path = temp_dir / "source_imports_stg.txt"
         mapping_path = temp_dir / "source_file_mapping_stg.txt"
-        conformed_path = temp_dir / "fact_conformed_mapping_stg.txt"  # NEW
+        conformed_path = temp_dir / "dw_mapping_and_transformations_stg.txt"
 
-        # Write temp files
         df_imports.to_csv(imports_path, sep='\t', index=False, header=False, encoding='utf-8',
                           lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
         df_mapping.to_csv(mapping_path, sep='\t', index=False, header=False, encoding='utf-8',
                           lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
 
         if not df_conformed_mapping.empty:
-            # Select known columns for conformed mapping (adjust as needed)
             known_conformed_cols = [
-                'Source_Name', 'ODS_Source_Name', 'ODS_Column', 'Conformed_Column',
-                'Transformation_Type', 'Transformation_Rule', 'Sequence_Order',
-                'Is_Key', 'Is_Required', 'Data_Type', 'Validation_Rule', 'Description',
-                'Inserted_Datetime'
+                'Source_Name', 'ODS_Column', 'Conformed_Column',
+                'Transformation_Type', 'Transformation_Rule',
+                'Is_Key', 'Is_Required', 'Default_Value',
+                'Validation_Rule', 'Sequence_Order','Description','Inserted_Datetime'
             ]
-            df_conformed_mapping = df_conformed_mapping[[c for c in known_conformed_cols if c in df_conformed_mapping.columns]].fillna('')
+            df_conformed_mapping = df_conformed_mapping.reindex(columns=known_conformed_cols).fillna('')
             df_conformed_mapping.to_csv(conformed_path, sep='\t', index=False, header=False, encoding='utf-8',
                                         lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
 
         db_cfg = get_db_config()
 
-        # Truncate existing tables
         truncate_table('ETL.Source_Imports')
         truncate_table('ETL.Source_File_Mapping')
-        truncate_table('ETL.Fact_Conformed_Mapping')  # NEW
+        truncate_table('ETL.DW_Mapping_And_Transformations')
 
-        # Upload via BCP
         upload_via_bcp(imports_path, 'ETL.Source_Imports', db_cfg, str(format_imports), 1)
         upload_via_bcp(mapping_path, 'ETL.Source_File_Mapping', db_cfg, str(format_mapping), 1)
 
         if conformed_path.exists() and conformed_path.stat().st_size > 0:
-            upload_via_bcp(conformed_path, 'ETL.Fact_Conformed_Mapping', db_cfg, str(format_conformed), 1)
+            upload_via_bcp(conformed_path, 'ETL.DW_Mapping_And_Transformations', db_cfg, str(format_conformed), 1)
 
-        # Merge procs for metadata
         execute_proc('ETL.SP_Merge_Dim_Source_Imports')
         execute_proc('ETL.SP_Merge_Dim_Source_Imports_Mapping')
-        execute_proc('ETL.SP_Merge_Dim_Fact_Conformed_Mapping')  # NEW - create this proc if needed
+        execute_proc('ETL.SP_Merge_Dim_DW_Mapping_And_Transformations')
 
-        # Existing DDL generation for dimensions
-        active_data_sources = df_imports[
-            (df_imports['Is_Active'] == '1') & 
-            (~df_imports['Source_Name'].isin(['Source_Imports', 'Source_File_Mapping', 'Fact_Sales_Conformed']))
+        # Get all active sources (including Fact_Sales)
+        active_sources = df_imports[
+            (df_imports['Is_Active'] == '1')
         ]['Source_Name'].unique()
 
         generated_dir = PROJECT_ROOT / get_config("dw_ddl", "base_folder") / get_config("dw_ddl", "generated_folder")
@@ -175,45 +172,55 @@ def process_etl_config(force_ddl: bool = False):
 
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-        for source in active_data_sources:
-            cursor.execute("SELECT Force_DDL_Generation FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source)
-            force_row = cursor.fetchone()
-            force_this = force_ddl or (force_row and force_row[0])
-
-            cursor.execute("EXEC [ETL].[SP_Get_Source_Imports_Last_Checked] ?", source)
-            last_checked_row = cursor.fetchone()
-            last_checked = last_checked_row[0] if last_checked_row else None
-
+        for source in active_sources:
             cursor.execute("""
-                SELECT MAX(Inserted_Datetime) 
-                FROM [ETL].[Dim_Source_Imports_Mapping] 
+                SELECT Source_Type, Staging_Table, DW_Table_Name, Force_DDL_Generation
+                FROM [ETL].[Dim_Source_Imports]
                 WHERE Source_Name = ?
             """, source)
-            max_mapping_change_row = cursor.fetchone()
-            max_mapping_change = max_mapping_change_row[0] if max_mapping_change_row else None
+            row = cursor.fetchone()
+            if not row:
+                logger.warning(f"No config found for source {source}")
+                continue
 
-            if force_this or (last_checked is None or (max_mapping_change and max_mapping_change > last_checked)):
-                logger.info(f"Generating DDL for {source}")
+            source_type, staging_table, dw_table,  force_this = row
+            force_this = force_ddl or (force_this == 1)
 
+            if source_type == 'Dimension':
+                # Existing dimension generation
                 source_mapping = df_mapping[df_mapping['Source_Name'] == source].to_dict('records')
-
-                cursor.execute("SELECT Staging_Table, DW_Table_Name FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source)
-                row = cursor.fetchone()
-                staging_table, dw_table = row if row else (None, None)
-
                 if staging_table and dw_table:
-                    ods_ddl = generate_ods_table_ddl(source, source_mapping)
-                    (generated_dir / f"ODS_{source}.sql").write_text(ods_ddl)
+                    if force_this:
+                        logger.info(f"Generating DDL for dimension {source}")
+                        ods_ddl = generate_ods_table_ddl(source, source_mapping)
+                        (generated_dir / f"ODS_{source}.sql").write_text(ods_ddl)
 
-                    dw_ddl = generate_dw_table_ddl('DW', f"Dim_{source}", source_mapping, timestamp)
-                    (generated_dir / f"DW_Dim_{source}.sql").write_text(dw_ddl)
+                        dw_ddl = generate_dw_table_ddl('DW', f"Dim_{source}", source_mapping, timestamp)
+                        (generated_dir / f"DW_Dim_{source}.sql").write_text(dw_ddl)
 
-                    merge_ddl = generate_merge_proc_ddl(source, staging_table, dw_table, source_mapping)
-                    (generated_dir / f"SP_Merge_Dim_{source}.sql").write_text(merge_ddl)
+                        merge_ddl = generate_merge_proc_ddl(source, staging_table, dw_table, source_mapping)
+                        (generated_dir / f"SP_Merge_Dim_{source}.sql").write_text(merge_ddl)
 
-                execute_proc('ETL.SP_Update_Source_Imports_Last_Checked', f"@SourceName = '{source}', @LastChecked = '{now_str}'")
-            else:
-                logger.debug(f"Skipping DDL generation for {source} - no change")
+            # elif source_type == 'Fact_Sales':
+            #     # Generate conformed merge proc
+            #     if conformed_target and conformed_merge_proc and conformed_target.strip():
+            #         source_mapping = df_conformed_mapping[df_conformed_mapping['Source_Name'] == source].to_dict('records')
+            #         if source_mapping:
+            #             logger.info(f"Generating conformed merge proc for {source} → {conformed_target}")
+            #             merge_ddl = generate_fact_to_conformed_merge_ddl(
+            #                 source_name=source,
+            #                 ods_table=staging_table,
+            #                 conformed_table=conformed_target,
+            #                 mapping_rows=source_mapping
+            #             )
+            #             # Derive filename from proc name (strip schema)
+            #             proc_filename = conformed_merge_proc.replace('[ETL].', '').replace(']', '') + '.sql'
+            #             proc_file = generated_dir / proc_filename
+            #             proc_file.write_text(merge_ddl)
+            #             logger.info(f"Generated: {proc_file}")
+
+            # Common checkpoint update
+            execute_proc('ETL.SP_Update_Source_Imports_Last_Checked', f"@SourceName = '{source}', @LastChecked = '{now_str}'")
 
         cursor.close()
         conn.close()
