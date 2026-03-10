@@ -207,8 +207,11 @@ def process_fact_sales(source_name: str, force_ddl: bool = False, audit_id: int 
                     df[col] = df[col].astype(str)
                     logger.debug(f"Treated {col} as text field: {df[col].dropna().unique()[:3].tolist()}")
 
-            # Add proper datetime for BCP (use standard SQL datetime format)
+            # Add system columns for BCP
             df['Inserted_Datetime'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            df['Audit_Source_Import_SK'] = audit_id if audit_id else 0
+            df['Source_File_Archive_SK'] = 0  # Will be populated by merge process
+            logger.debug("Added system columns: Inserted_Datetime, Audit_Source_Import_SK, Source_File_Archive_SK")
             logger.debug("Starting BCP prep for file: " + str(file_path))
             # Temp TXT for BCP
             temp_flat = temp_dir / f"{source_name}_{file_path.stem}_cleaned.txt"

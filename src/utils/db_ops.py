@@ -207,86 +207,143 @@ def insert_source_file_archive(
 
 
 def generate_bcp_format_file(source_name: str, fmt_path: Path):
-    logger = logging.getLogger(__name__)
-    logger.info(f"Generating BCP format file for {source_name} → {fmt_path}")
+    """
+    Generate a BCP format file for a given source based on
+    ETL.Dim_Source_Imports_Mapping with dynamic data type mapping.
 
+    Rules:
+    - One entry per Target_Column (Is_Deleted = 0), ordered by File_Mapping_SK
+    - Map Data_Type to proper BCP SQL type:
+      * VARCHAR(n) -> SQLCHAR with length n
+      * DECIMAL(m,n) -> SQLCHAR with length m+2 (for decimal point and sign)
+      * INT -> SQLCHAR with length 20
+      * Inserted_Datetime -> SQLCHAR with length 30
+    - Field terminator: "\\t" for all but the last column
+    - Row terminator: "\\r\\n" for the last column only
+    """
     conn = get_connection()
     cursor = conn.cursor()
 
     try:
-        cursor.execute("""
-            SELECT Target_Column, Data_Type
-            FROM [ETL].[Dim_Source_Imports_Mapping]
+        cursor.execute(
+            """
+            SELECT File_Mapping_SK, Target_Column, Data_Type
+            FROM ETL.Dim_Source_Imports_Mapping
             WHERE Source_Name = ?
               AND Is_Deleted = 0
             ORDER BY File_Mapping_SK
-        """, (source_name,))
-        columns = cursor.fetchall()
-
-        if not columns:
-            logger.warning(f"No mappings found for {source_name} - empty format file")
-            return
-
-        all_columns = list(columns)
-        all_columns.append(('Inserted_Datetime', 'DATETIME'))
-        all_columns.append(('Audit_Source_Import_SK', 'INT'))
-        all_columns.append(('Source_File_Archive_SK', 'INT'))
-
-        num_cols = len(all_columns)
-
-        fmt_lines = ["15.0", str(num_cols)]
-
-        col_num = 1
-        for col_name, data_type in all_columns:
-            data_type = (data_type or '').upper().strip()
-
-            # Determine BCP type and length
-            bcp_type = "SQLCHAR"
-            prefix_len = "0"
-            length = "8000"  # safe fallback
-
-            # Parse length from Data_Type (e.g. VARCHAR(255) → 255)
-            if '(' in data_type and ')' in data_type:
-                try:
-                    length = data_type.split('(')[1].split(')')[0].strip()
-                except:
-                    pass
-
-            if 'INT' in data_type:
-                bcp_type = "SQLINT"
-                length = "4"
-            elif 'DECIMAL' in data_type:
-                bcp_type = "SQLCHAR"
-                length = "50"
-            elif 'DATETIME' in data_type:
-                bcp_type = "SQLCHAR"
-                length = "30"
-
-            terminator = r"\t" if col_num < num_cols else r"\r\n"
-
-            # Exact BCP non-native format (fixed widths, single space separators)
-            fmt_line = (
-                f"{col_num:8}" +           # 8 chars for host file field order
-                f" {bcp_type:9}" +         # 1 space + 9 for host data type
-                f" {prefix_len:7}" +       # 1 space + 7 for prefix length
-                f" {length:7}" +           # 1 space + 7 for data length
-                f' "{terminator}"' +       # space + quoted terminator
-                f" {col_num:8}" +          # 1 space + 8 for server column order
-                f" {col_name:30}" +        # 1 space + 30 for server column name
-                " \"\""                    # empty collation
-            )
-            fmt_lines.append(fmt_line)
-            col_num += 1
-
-        fmt_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(fmt_path, 'w', encoding='ascii', newline='\r\n') as f:
-            f.write('\n'.join(fmt_lines) + '\n')
-
-        logger.info(f"BCP format file generated: {fmt_path} ({num_cols} columns)")
-
-    except Exception as e:
-        logger.error(f"Failed generating .fmt for {source_name}: {e}")
-        raise
+            """,
+            source_name,
+        )
+        rows = cursor.fetchall()
     finally:
         cursor.close()
         conn.close()
+
+    if not rows:
+        raise ValueError(f"No mapping found for source: {source_name}")
+
+    # Map data types to BCP format
+    def map_data_type_to_bcp(data_type: str) -> tuple:
+        """Map database data type to BCP format (sql_type, length)"""
+        if data_type.startswith('VARCHAR'):
+            # Extract length from VARCHAR(255)
+            length = int(data_type.split('(')[1].split(')')[0])
+            return 'SQLCHAR', length
+        elif data_type.startswith('DECIMAL'):
+            # For DECIMAL(18,4), use length 20 (18 digits + decimal + sign + padding)
+            precision = int(data_type.split('(')[1].split(',')[0])
+            return 'SQLCHAR', precision + 2
+        elif data_type == 'INT':
+            return 'SQLCHAR', 20  # Use SQLCHAR for integers too
+        elif data_type.startswith('DATETIME'):
+            return 'SQLCHAR', 30
+        else:
+            # Default to SQLCHAR with generous length
+            return 'SQLCHAR', 500
+
+    # Build format file entries
+    format_entries = []
+    for idx, (file_mapping_sk, target_column, data_type) in enumerate(rows, start=1):
+        sql_type, length = map_data_type_to_bcp(data_type)
+        # All business columns use tab terminator
+        entry = (
+            f"{idx}\t"
+            f"{sql_type}\t"
+            f"0\t"
+            f"{length}\t"
+            f'"\\t"\t'  # Tab terminator
+            f"{idx}\t"
+            f"{target_column}\t"
+            f"SQL_Latin1_General_CP1_CI_AS"
+        )
+        format_entries.append(entry)
+
+    # Ensure Inserted_Datetime is always the last column with \r\n terminator
+    if "Inserted_Datetime" not in [row[1] for row in rows]:
+        idx = len(format_entries) + 1
+        entry = (
+            f"{idx}\t"
+            f"SQLCHAR\t"
+            f"0\t"
+            f"30\t"
+            f'"\\t"\t'  # Tab terminator (not last yet)
+            f"{idx}\t"
+            f"Inserted_Datetime\t"
+            f"SQL_Latin1_General_CP1_CI_AS"
+        )
+        format_entries.append(entry)
+    
+    # Add system columns that the table expects
+    # Audit_Source_Import_SK
+    idx = len(format_entries) + 1
+    entry = (
+        f"{idx}\t"
+        f"SQLCHAR\t"
+        f"0\t"
+        f"20\t"
+        f'"\\t"\t'  # Tab terminator
+        f"{idx}\t"
+        f"Audit_Source_Import_SK\t"
+        f"SQL_Latin1_General_CP1_CI_AS"
+    )
+    format_entries.append(entry)
+    
+    # Source_File_Archive_SK (last column - gets \r\n)
+    idx = len(format_entries) + 1
+    entry = (
+        f"{idx}\t"
+        f"SQLCHAR\t"
+        f"0\t"
+        f"20\t"
+        f'"\\r\\n"\t'  # Row terminator for last column
+        f"{idx}\t"
+        f"Source_File_Archive_SK\t"
+        f"SQL_Latin1_General_CP1_CI_AS"
+    )
+    format_entries.append(entry)
+    
+    # Fix the last business column to use \r\n instead of \t
+    if len(format_entries) >= 3:  # At least business + Inserted_Datetime + system columns
+        # The last business column should have \r\n terminator
+        last_business_entry = format_entries[-3]  # The last business column before system columns
+        format_entries[-3] = last_business_entry.replace('"\\t"', '"\\r\\n"')
+    
+    # Fix Inserted_Datetime to use \t instead of \r\n (it's not the last column)
+    if len(format_entries) >= 2:
+        for i, entry in enumerate(format_entries):
+            if 'Inserted_Datetime' in entry:
+                format_entries[i] = entry.replace('"\\r\\n"', '"\\t"')
+                break
+
+    # Write format file
+    lines = []
+    lines.append("14.0")
+    lines.append(str(len(format_entries)))
+    lines.extend(format_entries)
+
+    fmt_dir = Path(fmt_path).parent
+    fmt_dir.mkdir(parents=True, exist_ok=True)
+
+    with open(fmt_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
