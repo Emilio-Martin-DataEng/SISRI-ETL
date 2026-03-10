@@ -1,5 +1,5 @@
 14.0
-14
+15
 1       SQLCHAR             0       100     "\t"       1     Source_Name                                  SQL_Latin1_General_CP1_CI_AS
 2       SQLCHAR             0       500     "\t"       2     Rel_Path                                     SQL_Latin1_General_CP1_CI_AS
 3       SQLCHAR             0       100     "\t"       3     Pattern                                      SQL_Latin1_General_CP1_CI_AS
@@ -12,5 +12,6 @@
 10      SQLCHAR             0       255     "\t"       10    Merge_Proc_Name                              SQL_Latin1_General_CP1_CI_AS
 11      SQLCHAR             0       1       "\t"       11    Force_DDL_Generation                         ""
 12      SQLCHAR             0       255     "\t"       12    Source_Type                                  SQL_Latin1_General_CP1_CI_AS
-13      SQLCHAR             0       1       "\t"       13    Is_Conformed_Target                         "" 
-14      SQLCHAR             0       30      "\r\n"     14    Inserted_Datetime                            ""
+13      SQLCHAR             0       1       "\t"       13    Is_Conformed_Target                          "" 
+14      SQLCHAR             0       255     "\t"       14    Wholesaler_Code                              SQL_Latin1_General_CP1_CI_AS
+15      SQLCHAR             0       30      "\r\n"     15    Inserted_Datetime                            ""

@@ -31,7 +31,9 @@ CREATE TABLE [{schema}].[{table_name}] (
     [Inserted_Datetime] DATETIME2 NOT NULL DEFAULT GETDATE(),
     [Updated_Datetime] DATETIME NULL,
     [Is_Deleted] BIT NOT NULL DEFAULT 0,
-    [Row_Change_Reason] VARCHAR(50) NULL
+    [Row_Change_Reason] VARCHAR(50) NULL,   
+    [Audit_Source_Import_SK] INT NOT NULL,
+    [Source_File_Archive_SK] INT NOT NULL 
     {column_defs}
 );
 GO
@@ -41,8 +43,8 @@ IF OBJECT_ID('{schema}.{table_name}_backup_{timestamp}', 'U') IS NOT NULL
 BEGIN
     SET IDENTITY_INSERT [{schema}].[{table_name}] ON;
     
-    INSERT INTO [{schema}].[{table_name}] ([{sk_col}], [Inserted_Datetime], [Updated_Datetime], [Is_Deleted], [Row_Change_Reason], {insert_columns})
-    SELECT [{sk_col}], [Inserted_Datetime], [Updated_Datetime], [Is_Deleted], [Row_Change_Reason], {select_columns}
+    INSERT INTO [{schema}].[{table_name}] ([{sk_col}], [Inserted_Datetime], [Updated_Datetime], [Is_Deleted], [Row_Change_Reason], [Audit_Source_Import_SK], [Source_File_Archive_SK], {insert_columns})
+    SELECT [{sk_col}], [Inserted_Datetime], [Updated_Datetime], [Is_Deleted], [Row_Change_Reason], [Audit_Source_Import_SK], [Source_File_Archive_SK], {select_columns}
     FROM [{schema}].[{table_name}_backup_{timestamp}];
     
     SET IDENTITY_INSERT [{schema}].[{table_name}] OFF;

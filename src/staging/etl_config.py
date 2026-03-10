@@ -174,7 +174,7 @@ def process_etl_config(force_ddl: bool = False):
 
         for source in active_sources:
             cursor.execute("""
-                SELECT Source_Type, Staging_Table, DW_Table_Name, Force_DDL_Generation
+                SELECT Source_Type, Staging_Table, DW_Table_Name, DW_Table_Name, Merge_Proc_Name, Force_DDL_Generation
                 FROM [ETL].[Dim_Source_Imports]
                 WHERE Source_Name = ?
             """, source)
@@ -183,7 +183,7 @@ def process_etl_config(force_ddl: bool = False):
                 logger.warning(f"No config found for source {source}")
                 continue
 
-            source_type, staging_table, dw_table,  force_this = row
+            source_type, staging_table, dw_table, conformed_target, conformed_merge_proc, force_this = row
             force_this = force_ddl or (force_this == 1)
 
             if source_type == 'Dimension':
@@ -201,23 +201,22 @@ def process_etl_config(force_ddl: bool = False):
                         merge_ddl = generate_merge_proc_ddl(source, staging_table, dw_table, source_mapping)
                         (generated_dir / f"SP_Merge_Dim_{source}.sql").write_text(merge_ddl)
 
-            # elif source_type == 'Fact_Sales':
-            #     # Generate conformed merge proc
-            #     if conformed_target and conformed_merge_proc and conformed_target.strip():
-            #         source_mapping = df_conformed_mapping[df_conformed_mapping['Source_Name'] == source].to_dict('records')
-            #         if source_mapping:
-            #             logger.info(f"Generating conformed merge proc for {source} → {conformed_target}")
-            #             merge_ddl = generate_fact_to_conformed_merge_ddl(
-            #                 source_name=source,
-            #                 ods_table=staging_table,
-            #                 conformed_table=conformed_target,
-            #                 mapping_rows=source_mapping
-            #             )
-            #             # Derive filename from proc name (strip schema)
-            #             proc_filename = conformed_merge_proc.replace('[ETL].', '').replace(']', '') + '.sql'
-            #             proc_file = generated_dir / proc_filename
-            #             proc_file.write_text(merge_ddl)
-            #             logger.info(f"Generated: {proc_file}")
+            elif source_type == 'Fact_Sales':
+                # Generate conformed merge proc
+                if conformed_target and conformed_merge_proc and conformed_target.strip():
+                    source_mapping = df_conformed_mapping[df_conformed_mapping['Source_Name'] == source].to_dict('records')
+                    if source_mapping and force_this:
+                        logger.info(f"Generating conformed merge proc for {source} → {conformed_target}")
+                        # merge_ddl = generate_fact_to_conformed_merge_ddl(
+                        #     source_name=source,
+                        #     ods_table=staging_table,
+                        #     conformed_table=conformed_target,
+                        #     mapping_rows=source_mapping
+                        # )
+                        proc_filename = conformed_merge_proc.replace('[ETL].', '').replace(']', '') + '.sql'
+                        proc_file = generated_dir / proc_filename
+                        proc_file.write_text(merge_ddl)
+                        logger.info(f"Generated: {proc_file}")
 
             # Common checkpoint update
             execute_proc('ETL.SP_Update_Source_Imports_Last_Checked', f"@SourceName = '{source}', @LastChecked = '{now_str}'")

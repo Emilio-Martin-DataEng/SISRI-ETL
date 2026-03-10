@@ -1,6 +1,7 @@
 # src/utils/ddl_generator.py
 
 from datetime import datetime
+import logging
 from pathlib import Path
 
 from src.config import PROJECT_ROOT
@@ -10,35 +11,74 @@ from src.utils.db_ops import get_connection, log_audit_source_import, get_next_a
 
  
 
-def generate_ods_table_ddl(source_name: str, columns: list[dict]) -> str:
+def generate_ods_table_ddl(source_name: str, columns: list[dict], schema: str = 'ODS') -> str:
+    """
+    Generate CREATE TABLE DDL for an ODS staging table based on metadata mappings.
+    
+    Args:
+        source_name: Name of the source (used for table name)
+        columns: List of dicts from Dim_Source_Imports_Mapping
+        schema: Target schema (default 'ODS')
+    
+    Returns:
+        str: Full DDL script (safe drop + create)
+    """
     column_defs = []
     pk_cols = []
 
     for col in columns:
-        col_name = col['Target_Column'].strip()
-        # Robust conversion of Is_Required
-        is_required = int(col.get('Is_Required', 0)) == 1
+        col_name = col.get('Target_Column', '').strip()
+        if not col_name:
+            continue  # skip invalid entries
+
+        # Robust type fallback
+        data_type = col.get('Data_Type', 'VARCHAR(255)').strip()
+        if not data_type:
+            data_type = 'VARCHAR(255)'
+
+        # Robust Is_Required (handle '1', 'True', 'Y', etc.)
+        is_required_val = col.get('Is_Required', 0)
+        is_required = str(is_required_val).strip().lower() in ('1', 'true', 'y', 'yes')
         nullability = "NOT NULL" if is_required else "NULL"
-        column_defs.append(f"    [{col_name}] {col['Data_Type']} {nullability}")
-        
-        # Robust conversion of Is_PK
-        if int(col.get('Is_PK', 0)) == 1:
+
+        column_defs.append(f"    [{col_name}] {data_type} {nullability}")
+
+        # Robust Is_PK
+        is_pk_val = col.get('Is_PK', 0)
+        if str(is_pk_val).strip().lower() in ('1', 'true', 'y', 'yes'):
             pk_cols.append(f"[{col_name}]")
 
+    # Always add standard audit columns
+    column_defs.append("    [Inserted_Datetime] DATETIME NOT NULL")
+    column_defs.append("    [Audit_Source_Import_SK] INT NOT NULL")
+    column_defs.append("    [Source_File_Archive_SK] INT NOT NULL")
+
+    # PK clause with options matching your templates
     pk_clause = ""
     if pk_cols:
-        pk_clause = f", CONSTRAINT PK_{source_name} PRIMARY KEY ({', '.join(pk_cols)})"
+        pk_cols_str = ", ".join(pk_cols)
+        pk_clause = f""",
+    CONSTRAINT [PK_{source_name}] PRIMARY KEY CLUSTERED (
+        {pk_cols_str}
+    ) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, 
+            ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]"""
 
-    ddl = f"""IF OBJECT_ID('ODS.{source_name}', 'U') IS NOT NULL
-DROP TABLE [ODS].[{source_name}];
+    ddl = f"""-- ODS table for {source_name} (generated {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
+IF OBJECT_ID('[{schema}].[{source_name}]', 'U') IS NOT NULL
+    DROP TABLE [{schema}].[{source_name}];
 GO
 
-CREATE TABLE [ODS].[{source_name}] (
-{',\n'.join(column_defs)},
-    [Inserted_Datetime] DATETIME2 NOT NULL DEFAULT GETDATE()
+CREATE TABLE [{schema}].[{source_name}] (
+{',\n'.join(column_defs)}
 {pk_clause}
-);
-GO"""
+) ON [PRIMARY];
+GO
+
+-- Defaults (for safety if script run multiple times)
+ALTER TABLE [{schema}].[{source_name}] ADD DEFAULT (GETDATE()) FOR [Inserted_Datetime];
+GO
+"""
+
     return ddl
 
 def generate_dw_table_ddl(schema: str, table_name: str, columns: list[dict], timestamp: str) -> str:
@@ -136,7 +176,9 @@ def generate_merge_proc_ddl(source_name: str, staging_table: str, dw_table: str,
         type1_update_block = f"""-- Type 1: UPDATE changed attributes
 UPDATE d SET
     {update_columns},
-    d.Updated_Datetime = GETDATE()
+    d.Updated_Datetime = GETDATE(),
+    d.Audit_Source_Import_SK = @Audit_Source_Import_SK,
+    d.Source_File_Archive_SK = @Source_File_Archive_SK
 FROM {dw_table} d
 INNER JOIN {staging_table} o ON {join_condition}
 WHERE ({type1_where_changes});
@@ -243,50 +285,3 @@ def apply_ddl_from_run():
     conn.close()
     print("DDL apply complete.")
 
-def generate_bcp_format_file(source_name: str, fmt_path: Path):
-    conn = get_connection()
-    cursor = conn.cursor()
-    try:
-        # Get all mapping columns + data types in order
-        cursor.execute("""
-            SELECT Target_Column, Data_Type 
-            FROM [ETL].[Dim_Source_Imports_Mapping] 
-            WHERE Source_Name = ? 
-            ORDER BY File_Mapping_SK
-        """, source_name)
-        rows = cursor.fetchall()
-        if not rows:
-            raise ValueError(f"No mapping columns found for source '{source_name}'")
-
-        with open(fmt_path, 'w', encoding='utf-8') as f:
-            f.write("14.0\n")
-            f.write(f"{len(rows) + 1}\n")  # +1 for Inserted_Datetime
-
-            for i, row in enumerate(rows, 1):
-                target_col, data_type = row
-                data_type = data_type.strip().upper()
-
-                # Parse length from Data_Type
-                if data_type.startswith('VARCHAR('):
-                    length = int(data_type.split('(')[1].split(')')[0])
-                elif data_type == 'BIT':
-                    length = 1
-                else:
-                    length = 8000  # fallback safe max
-
-                terminator = "\t" if i < len(rows) else "\t"
-                collation = "" if 'BIT' in data_type else "SQL_Latin1_General_CP1_CI_AS"
-
-                f.write(f"{i} SQLCHAR 0 {length} \"{terminator}\" {i} {target_col} {collation}\n")
-
-            # Inserted_Datetime (always last, SQLCHAR, empty collation)
-            f.write(f"{len(rows)+1} SQLCHAR 0 30 \"\\r\\n\" {len(rows)+1} Inserted_Datetime \"\"\n")
-
-        logger = setup_logging("source_import")
-        logger.info(f"Generated format file: {fmt_path}")
-        if not fmt_path.exists():
-            logger.error(f"Format file was NOT created despite generation call")
-            raise RuntimeError(f"Failed to create format file: {fmt_path}")
-    finally:
-        cursor.close()
-        conn.close()

@@ -9,7 +9,7 @@ from src.config import PROJECT_ROOT, get_config, get_db_config, get_logs_dir
 
 SYSTEM_BASE_PATH = lambda: PROJECT_ROOT
 from src.utils.db import upload_via_bcp
-from src.utils.db_ops import generate_bcp_format_file, get_connection, execute_proc, truncate_table
+from src.utils.db_ops import  get_connection, execute_proc, truncate_table, generate_bcp_format_file
 from src.utils.logging_config import setup_logging
 from src.utils.rejected_rows import RejectedRowsHandler
 

@@ -1,8 +1,8 @@
 -- Merge proc for {dim_name} -> {dw_table} (SCD Type 1)
 -- Generated at {generated_time}
 CREATE OR ALTER PROCEDURE [ETL].[SP_Merge_Dim_{dim_name}]
-    @Source_Import_SK INT = NULL,
-    @Audit_Source_Import_SK INT = NULL
+    @Source_File_Archive_SK INT = -1,
+    @Audit_Source_Import_SK INT = -1
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -15,21 +15,25 @@ BEGIN
         {type1_update_block}
 
         -- INSERT new dimension rows
-        INSERT INTO {dw_table} ({insert_columns}, [Inserted_Datetime], [Updated_Datetime], [Row_Change_Reason])
-        SELECT {select_columns}, GETDATE(), NULL, 'NEW'
+        INSERT INTO {dw_table} ({insert_columns}, [Inserted_Datetime], [Updated_Datetime], [Row_Change_Reason], [Audit_Source_Import_SK], [Source_File_Archive_SK] )
+        SELECT {select_columns}, GETDATE(), NULL, 'NEW', @Audit_Source_Import_SK, @Source_File_Archive_SK 
         FROM {ods_table} o
         WHERE NOT EXISTS (SELECT 1 FROM {dw_table} d WHERE {join_condition});
         SET @InsertedCount = @@ROWCOUNT;
 
         -- SOFT-DELETE: mark rows no longer in staging
-        UPDATE d SET d.Is_Deleted = 1, d.Updated_Datetime = GETDATE(), d.Row_Change_Reason = 'Soft Deleted'
+        UPDATE d SET d.Is_Deleted = 1, d.Updated_Datetime = GETDATE(), d.Row_Change_Reason = 'Soft Deleted',
+            d.Audit_Source_Import_SK = @Audit_Source_Import_SK,
+            d.Source_File_Archive_SK = @Source_File_Archive_SK
         FROM {dw_table} d
         LEFT JOIN {ods_table} o ON {join_condition}
         WHERE o.{key_column} IS NULL AND d.Is_Deleted = 0;
         SET @DeletedCount = @@ROWCOUNT;
 
         -- RE-ACTIVATE: rows that reappear in staging
-        UPDATE d SET d.Is_Deleted = 0, d.Updated_Datetime = GETDATE(), d.Row_Change_Reason = 'Reactivated'
+        UPDATE d SET d.Is_Deleted = 0, d.Updated_Datetime = GETDATE(), d.Row_Change_Reason = 'Reactivated',
+            d.Audit_Source_Import_SK = @Audit_Source_Import_SK,
+            d.Source_File_Archive_SK = @Source_File_Archive_SK
         FROM {dw_table} d
         INNER JOIN {ods_table} o ON {join_condition}
         WHERE d.Is_Deleted = 1;
@@ -48,7 +52,7 @@ BEGIN
                 @ErrState INT = ERROR_STATE(), @ErrLine INT = ERROR_LINE(), @ErrSev INT = ERROR_SEVERITY();
         EXEC ETL.SP_Log_ETL_Error @Procedure_Name = @ProcName, @Error_Message = @ErrMsg,
             @Error_Number = @ErrNum, @Error_State = @ErrState, @Error_Line = @ErrLine, @Error_Severity = @ErrSev,
-            @Source_Import_SK = @Source_Import_SK, @Audit_Source_Import_SK = @Audit_Source_Import_SK;
+            @Source_File_Archive_SK = @Source_File_Archive_SK, @Audit_Source_Import_SK = @Audit_Source_Import_SK;
         THROW;
     END CATCH
 END;

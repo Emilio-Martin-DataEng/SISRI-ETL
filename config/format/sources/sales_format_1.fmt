@@ -1,10 +1,10 @@
 14.0
 8
-1	SQLCHAR	0	500	"\t"	1	Store_Name	SQL_Latin1_General_CP1_CI_AS
-2	SQLCHAR	0	500	"\t"	2	Product_Name	SQL_Latin1_General_CP1_CI_AS
-3	SQLCHAR	0	500	"\t"	3	Sales_Date_dd-MM-YYYY	SQL_Latin1_General_CP1_CI_AS
-4	SQLCHAR	0	500	"\t"	4	Barcode	SQL_Latin1_General_CP1_CI_AS
-5	SQLCHAR	0	500	"\t"	5	Sales_Amount	SQL_Latin1_General_CP1_CI_AS
-6	SQLCHAR	0	500	"\t"	6	Sales_Quantity	SQL_Latin1_General_CP1_CI_AS
-7	SQLCHAR	0	500	"\t"	7	Cost_Price	SQL_Latin1_General_CP1_CI_AS
+1	SQLCHAR	0	255	"\t"	1	Store_Name	SQL_Latin1_General_CP1_CI_AS
+2	SQLCHAR	0	255	"\t"	2	Product_Name	SQL_Latin1_General_CP1_CI_AS
+3	SQLCHAR	0	255	"\t"	3	Sales_Date_dd-MM-YYYY	SQL_Latin1_General_CP1_CI_AS
+4	SQLCHAR	0	255	"\t"	4	Barcode	SQL_Latin1_General_CP1_CI_AS
+5	SQLCHAR	0	20	"\t"	5	Sales_Amount	SQL_Latin1_General_CP1_CI_AS
+6	SQLCHAR	0	20	"\t"	6	Sales_Quantity	SQL_Latin1_General_CP1_CI_AS
+7	SQLCHAR	0	20	"\t"	7	Cost_Price	SQL_Latin1_General_CP1_CI_AS
 8	SQLCHAR	0	30	"\r\n"	8	Inserted_Datetime	SQL_Latin1_General_CP1_CI_AS

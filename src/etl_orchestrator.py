@@ -5,8 +5,9 @@ import argparse
 
 from src.staging.etl_config import process_etl_config
 from src.staging.source_import import process_source
-from src.utils.db_ops import log_audit_source_import, get_next_audit_import_id, execute_proc, get_connection
-from src.utils.ddl_generator import apply_ddl_from_run, generate_dw_table_ddl, generate_ods_table_ddl
+from src.utils.db_ops import log_audit_source_import, get_next_audit_import_id, execute_proc, get_connection, generate_bcp_format_file
+from src.utils.ddl_generator import apply_ddl_from_run, generate_dw_table_ddl, generate_ods_table_ddl 
+ 
 from src.utils.logging_config import setup_logging
 
 def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
