@@ -285,3 +285,131 @@ def apply_ddl_from_run():
     conn.close()
     print("DDL apply complete.")
 
+
+def generate_fact_to_conformed_merge_ddl(source_name: str, ods_table: str, conformed_table: str, mapping_rows: list[dict]) -> str:
+    """
+    Generate merge procedure DDL for Fact_Sales sources from ODS to conformed staging.
+    
+    Args:
+        source_name: Name of the source (e.g., 'Sales_Format_2')
+        ods_table: Full ODS table name (e.g., '[ODS].[Sales_Format_2]')
+        conformed_table: Full conformed table name (e.g., '[ETL].[Staging_Fact_Sales_Conformed]')
+        mapping_rows: List of mapping dictionaries from DW_Mapping_And_Transformations
+    
+    Returns:
+        str: Complete stored procedure DDL
+    """
+    proc_name = f"[ETL].[SP_Merge_Fact_Sales_ODS_to_Conformed]"
+    
+    ddl = f"""-- Generated merge procedure for {source_name}
+-- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+IF OBJECT_ID('{proc_name}', 'P') IS NOT NULL
+    DROP PROCEDURE {proc_name}
+GO
+
+CREATE PROCEDURE {proc_name}
+    @SourceName VARCHAR(100),
+    @Source_File_Archive_SK INT = -1,
+    @Audit_Source_Import_SK INT = -1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    
+    DECLARE @ProcName SYSNAME = N'{proc_name}';
+    DECLARE @RowsInserted INT = 0;
+    DECLARE @ErrMsg NVARCHAR(MAX);
+    
+    BEGIN TRY
+        DECLARE @sql NVARCHAR(MAX) = N'INSERT INTO {conformed_table} (';
+        
+        DECLARE @insert_cols NVARCHAR(MAX) = N'';
+        DECLARE @select_cols NVARCHAR(MAX) = N'';
+        
+        -- Build dynamic columns from mappings
+        """
+    
+    # Add column building logic
+    for mapping in mapping_rows:
+        ods_col = mapping.get('ODS_Column', '')
+        conf_col = mapping.get('Conformed_Column', '')
+        trans_type = mapping.get('Transformation_Type', 'Direct')
+        trans_rule = mapping.get('Transformation_Rule', f'[{ods_col}]')
+        default_val = mapping.get('Default_Value', 'NULL')
+        
+        if conf_col:
+            ddl += f"""
+        -- Add {conf_col}
+        SET @insert_cols += QUOTENAME('{conf_col}') + N', ';
+        """
+            
+            if trans_type == 'Direct':
+                ddl += f"""
+        SET @select_cols += N'COALESCE(osi.[{ods_col}], {default_val}) AS [{conf_col}], ';
+        """
+            elif trans_type == 'Expression':
+                ddl += f"""
+        SET @select_cols += N'COALESCE({trans_rule}, {default_val}) AS [{conf_col}], ';
+        """
+    
+    ddl += f"""
+        
+        -- Remove trailing commas
+        IF LEN(@insert_cols) > 0
+            SET @insert_cols = LEFT(@insert_cols, LEN(@insert_cols) - 1);
+            
+        IF LEN(@select_cols) > 0
+            SET @select_cols = LEFT(@select_cols, LEN(@select_cols) - 1);
+        
+        -- Add standard audit columns
+        SET @sql += @insert_cols + N',
+            [Inserted_Datetime], [Audit_Source_Import_SK], [Source_File_Archive_SK]
+        )
+        SELECT ' + @select_cols + N',
+            GETDATE() AS [Inserted_Datetime],
+            ' + CAST(@Audit_Source_Import_SK AS NVARCHAR(20)) + N' AS [Audit_Source_Import_SK],
+            ' + CAST(@Source_File_Archive_SK AS NVARCHAR(20)) + N' AS [Source_File_Archive_SK]
+        FROM {ods_table} osi;';
+        
+        -- Debug
+        PRINT @sql;
+        
+        EXEC sp_executesql @sql;
+        
+        SET @RowsInserted = @@ROWCOUNT;
+        
+        PRINT CONCAT('Inserted ', @RowsInserted, ' rows into conformed staging for source ', @SourceName);
+        
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        
+        SELECT @ErrMsg = ERROR_MESSAGE();
+        DECLARE @ErrNum INT = ERROR_NUMBER();
+        DECLARE @ErrState INT = ERROR_STATE();
+        DECLARE @ErrLine INT = ERROR_LINE();
+        DECLARE @ErrSev INT = ERROR_SEVERITY();
+        
+        EXEC ETL.SP_Log_ETL_Error
+            @Procedure_Name = @ProcName,
+            @Error_Message = @ErrMsg,
+            @Error_Number = @ErrNum,
+            @Error_State = @ErrState,
+            @Error_Line = @ErrLine,
+            @Error_Severity = @ErrSev,
+            @Source_File_Archive_SK = @Source_File_Archive_SK,
+            @Audit_Source_Import_SK = @Audit_Source_Import_SK;
+        
+        THROW;
+    END CATCH
+END;
+GO
+
+-- Execute the procedure for {source_name}
+EXEC {proc_name} @SourceName = '{source_name}';
+GO
+"""
+    
+    return ddl
+

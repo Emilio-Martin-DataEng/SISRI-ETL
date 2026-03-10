@@ -1,0 +1,13 @@
+14.0
+11
+1	SQLCHAR	0	255	"\t"	1	Date	SQL_Latin1_General_CP1_CI_AS
+2	SQLCHAR	0	255	"\t"	2	Store_Name	SQL_Latin1_General_CP1_CI_AS
+3	SQLCHAR	0	255	"\t"	3	Product_Name	SQL_Latin1_General_CP1_CI_AS
+4	SQLCHAR	0	255	"\t"	4	Barcode	SQL_Latin1_General_CP1_CI_AS
+5	SQLCHAR	0	255	"\t"	5	Cost	SQL_Latin1_General_CP1_CI_AS
+6	SQLCHAR	0	255	"\t"	6	Sales_Qty	SQL_Latin1_General_CP1_CI_AS
+7	SQLCHAR	0	255	"\t"	7	Sales	SQL_Latin1_General_CP1_CI_AS
+8	SQLCHAR	0	255	"\t"	8	Discount	SQL_Latin1_General_CP1_CI_AS
+9	SQLCHAR	0	30	"\t"	9	Inserted_Datetime	SQL_Latin1_General_CP1_CI_AS
+10	SQLCHAR	0	20	"\t"	10	Audit_Source_Import_SK	SQL_Latin1_General_CP1_CI_AS
+11	SQLCHAR	0	20	"\r\n"	11	Source_File_Archive_SK	SQL_Latin1_General_CP1_CI_AS

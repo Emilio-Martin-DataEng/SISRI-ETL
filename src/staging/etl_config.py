@@ -24,8 +24,8 @@ from src.utils.ddl_generator import (
     apply_ddl_from_run,
     generate_ods_table_ddl,
     generate_dw_table_ddl,
-    generate_merge_proc_ddl
-    #generate_fact_to_conformed_merge_ddl   # Assumes this exists in ddl_generator.py
+    generate_merge_proc_ddl,
+    generate_fact_to_conformed_merge_ddl
 )
 from src.utils.logging_config import setup_logging
 
@@ -129,6 +129,23 @@ def process_etl_config(force_ddl: bool = False):
 
         df_imports.to_csv(imports_path, sep='\t', index=False, header=False, encoding='utf-8',
                           lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
+
+        # Fix Source_File_Mapping to include all required columns
+        known_mapping_cols = [
+            'File_Mapping_SK', 'Source_Import_SK', 'Source_Name', 'Source_Column', 'Target_Column',
+            'Data_Type', 'Description', 'Is_Deleted', 'Inserted_Datetime', 'Updated_Datetime',
+            'Is_Type2_Attribute', 'Is_PK', 'Is_Required'
+        ]
+        df_mapping = df_mapping.reindex(columns=known_mapping_cols, fill_value=0)  # Fill missing with 0/defaults
+        # Set proper defaults for specific columns
+        if 'Source_Import_SK' not in df_mapping.columns or df_mapping['Source_Import_SK'].isna().all():
+            df_mapping['Source_Import_SK'] = 8
+        if 'Inserted_Datetime' not in df_mapping.columns or df_mapping['Inserted_Datetime'].isna().all():
+            df_mapping['Inserted_Datetime'] = now_str
+        if 'Updated_Datetime' in df_mapping.columns:
+            df_mapping['Updated_Datetime'] = None  # Keep as NULL
+        
+        # Regenerate the CSV with all columns
         df_mapping.to_csv(mapping_path, sep='\t', index=False, header=False, encoding='utf-8',
                           lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
 
@@ -207,12 +224,12 @@ def process_etl_config(force_ddl: bool = False):
                     source_mapping = df_conformed_mapping[df_conformed_mapping['Source_Name'] == source].to_dict('records')
                     if source_mapping and force_this:
                         logger.info(f"Generating conformed merge proc for {source} → {conformed_target}")
-                        # merge_ddl = generate_fact_to_conformed_merge_ddl(
-                        #     source_name=source,
-                        #     ods_table=staging_table,
-                        #     conformed_table=conformed_target,
-                        #     mapping_rows=source_mapping
-                        # )
+                        merge_ddl = generate_fact_to_conformed_merge_ddl(
+                            source_name=source,
+                            ods_table=staging_table,
+                            conformed_table=conformed_target,
+                            mapping_rows=source_mapping
+                        )
                         proc_filename = conformed_merge_proc.replace('[ETL].', '').replace(']', '') + '.sql'
                         proc_file = generated_dir / proc_filename
                         proc_file.write_text(merge_ddl)
