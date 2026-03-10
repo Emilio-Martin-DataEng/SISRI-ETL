@@ -75,9 +75,8 @@ def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
                 rows_processed = process_source(source_name, force_ddl=force_ddl, audit_id=global_audit_id)
                 total_rows += rows_processed if rows_processed else 0
 
-                # Run merge for dimensions
-                execute_proc(merge_proc_name)
-                logger.debug(f"Merged {source_name} using {merge_proc_name}")
+                # Skip merge for dimensions (now handled per file in source_import.py)
+                logger.info(f"Skipping merge for {source_name} (handled per file in source_import.py)")
 
             elif source_type == 'Fact_Sales':
                 # New fact path

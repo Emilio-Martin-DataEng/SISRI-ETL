@@ -1,0 +1,4 @@
+Product_Code	Product_Name	Product_Barcode	Principal_Code	Brand_Code	Product_Department	Product_Category	Product_Segment	Product_Sub_Segment	Product_Packaging_Type	Unit_Of_Measure	Product_Volume	Product_Variant	Product_Case_Size	Product_Nappi_Code	Product_Schedule
+PROD001	Test Product 1	600100000001	PRINC001	BRAND001	Pharmacy	General	Segment1	SubSegment1	Pack1	Each	100	Var1	12	NAPP001	Schedule1
+PROD002	Test Product 2	600100000002	PRINC002	BRAND002	Pharmacy	General	Segment2	SubSegment2	Pack2	Each	200	Var2	24	NAPP002	Schedule2
+PROD003	Test Product 3	600100000003	PRINC003	BRAND003	Pharmacy	General	Segment3	SubSegment3	Pack3	Each	300	Var3	36	NAPP003	Schedule3

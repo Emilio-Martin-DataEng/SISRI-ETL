@@ -36,7 +36,7 @@ def upload_via_bcp(
 
     if format_file:
         bcp_cmd.extend(['-f', format_file])
-        bcp_cmd.extend(['-r', '\\r\\n'])
+        # Don't specify -r when using format file - use terminators from format file
     else:
         bcp_cmd.extend(['-c', '-t', '\\t', '-r', '\\r\\n'])
         

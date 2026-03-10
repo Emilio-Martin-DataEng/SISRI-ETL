@@ -1,11 +1,11 @@
-15.0
+14.0
 9
-       1 SQLCHAR   0       255     "\t"        1 Wholesaler_Code                ""
-       2 SQLCHAR   0       255     "\t"        2 Wholesaler_Name                ""
-       3 SQLCHAR   0       255     "\t"        3 Wholesaler_Address             ""
-       4 SQLCHAR   0       255     "\t"        4 Wholesaler_City                ""
-       5 SQLCHAR   0       255     "\t"        5 Wholesaler_Province            ""
-       6 SQLCHAR   0       255     "\t"        6 Wholesaler_Country             ""
-       7 SQLCHAR   0       30      "\t"        7 Inserted_Datetime              ""
-       8 SQLINT    0       4       "\t"        8 Audit_Source_Import_SK         ""
-       9 SQLINT    0       4       "\r\n"        9 Source_File_Archive_SK         ""
+1	SQLCHAR	0	255	"\t"	1	Wholesaler_Code	SQL_Latin1_General_CP1_CI_AS
+2	SQLCHAR	0	255	"\t"	2	Wholesaler_Name	SQL_Latin1_General_CP1_CI_AS
+3	SQLCHAR	0	255	"\t"	3	Wholesaler_Address	SQL_Latin1_General_CP1_CI_AS
+4	SQLCHAR	0	255	"\t"	4	Wholesaler_City	SQL_Latin1_General_CP1_CI_AS
+5	SQLCHAR	0	255	"\t"	5	Wholesaler_Province	SQL_Latin1_General_CP1_CI_AS
+6	SQLCHAR	0	255	"\t"	6	Wholesaler_Country	SQL_Latin1_General_CP1_CI_AS
+7	SQLCHAR	0	30	"\t"	7	Inserted_Datetime	SQL_Latin1_General_CP1_CI_AS
+8	SQLINT	0	4	"\t"	8	Audit_Source_Import_SK	""
+9	SQLINT	0	4	"\r\n"	9	Source_File_Archive_SK	""

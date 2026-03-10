@@ -197,7 +197,11 @@ def insert_source_file_archive(
     new_sk
     )
     
-    
+    # Get the newly inserted Source_File_Archive_SK
+    cursor.execute("SELECT @@IDENTITY")
+    identity_row = cursor.fetchone()
+    if identity_row and identity_row[0] is not None:
+        new_sk = int(identity_row[0])
     
     conn.commit()
     cursor.close()
@@ -220,6 +224,7 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
       * Inserted_Datetime -> SQLCHAR with length 30
     - Field terminator: "\\t" for all but the last column
     - Row terminator: "\\r\\n" for the last column only
+    - For dimensions: Include Audit_Source_Import_SK and Source_File_Archive_SK at end
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -227,7 +232,7 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
     try:
         cursor.execute(
             """
-            SELECT File_Mapping_SK, Target_Column, Data_Type
+            SELECT File_Mapping_SK, Source_Column, Target_Column, Data_Type
             FROM ETL.Dim_Source_Imports_Mapping
             WHERE Source_Name = ?
               AND Is_Deleted = 0
@@ -242,6 +247,15 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
 
     if not rows:
         raise ValueError(f"No mapping found for source: {source_name}")
+
+    # Check if this is a dimension source
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT Source_Type FROM ETL.Dim_Source_Imports WHERE Source_Name = ?", source_name)
+    row = cursor.fetchone()
+    source_type = row[0] if row and row[0] is not None else 'Dimension'
+    cursor.close()
+    conn.close()
 
     # Map data types to BCP format
     def map_data_type_to_bcp(data_type: str) -> tuple:
@@ -264,7 +278,7 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
 
     # Build format file entries
     format_entries = []
-    for idx, (file_mapping_sk, target_column, data_type) in enumerate(rows, start=1):
+    for idx, (file_mapping_sk, source_column, target_column, data_type) in enumerate(rows, start=1):
         sql_type, length = map_data_type_to_bcp(data_type)
         # All business columns use tab terminator
         entry = (
@@ -274,67 +288,69 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
             f"{length}\t"
             f'"\\t"\t'  # Tab terminator
             f"{idx}\t"
-            f"{target_column}\t"
+            f"{target_column}\t"  # Use Target_Column for BCP (database column name)
             f"SQL_Latin1_General_CP1_CI_AS"
         )
         format_entries.append(entry)
 
-    # Ensure Inserted_Datetime is always the last column with \r\n terminator
-    if "Inserted_Datetime" not in [row[1] for row in rows]:
+    # For dimensions, add system columns in correct order
+    if source_type == 'Dimension':
+        # Inserted_Datetime (tab terminator, not last column)
         idx = len(format_entries) + 1
         entry = (
             f"{idx}\t"
             f"SQLCHAR\t"
             f"0\t"
             f"30\t"
-            f'"\\t"\t'  # Tab terminator (not last yet)
+            f'"\\t"\t'  # Tab terminator
             f"{idx}\t"
             f"Inserted_Datetime\t"
             f"SQL_Latin1_General_CP1_CI_AS"
         )
         format_entries.append(entry)
-    
-    # Add system columns that the table expects
-    # Audit_Source_Import_SK
-    idx = len(format_entries) + 1
-    entry = (
-        f"{idx}\t"
-        f"SQLCHAR\t"
-        f"0\t"
-        f"20\t"
-        f'"\\t"\t'  # Tab terminator
-        f"{idx}\t"
-        f"Audit_Source_Import_SK\t"
-        f"SQL_Latin1_General_CP1_CI_AS"
-    )
-    format_entries.append(entry)
-    
-    # Source_File_Archive_SK (last column - gets \r\n)
-    idx = len(format_entries) + 1
-    entry = (
-        f"{idx}\t"
-        f"SQLCHAR\t"
-        f"0\t"
-        f"20\t"
-        f'"\\r\\n"\t'  # Row terminator for last column
-        f"{idx}\t"
-        f"Source_File_Archive_SK\t"
-        f"SQL_Latin1_General_CP1_CI_AS"
-    )
-    format_entries.append(entry)
-    
-    # Fix the last business column to use \r\n instead of \t
-    if len(format_entries) >= 3:  # At least business + Inserted_Datetime + system columns
-        # The last business column should have \r\n terminator
-        last_business_entry = format_entries[-3]  # The last business column before system columns
-        format_entries[-3] = last_business_entry.replace('"\\t"', '"\\r\\n"')
-    
-    # Fix Inserted_Datetime to use \t instead of \r\n (it's not the last column)
-    if len(format_entries) >= 2:
-        for i, entry in enumerate(format_entries):
-            if 'Inserted_Datetime' in entry:
-                format_entries[i] = entry.replace('"\\r\\n"', '"\\t"')
-                break
+        
+        # Audit_Source_Import_SK (SQLINT)
+        idx = len(format_entries) + 1
+        entry = (
+            f"{idx}\t"
+            f"SQLINT\t"
+            f"0\t"
+            f"4\t"
+            f'"\\t"\t'  # Tab terminator
+            f"{idx}\t"
+            f"Audit_Source_Import_SK\t"
+            f"\"\""
+        )
+        format_entries.append(entry)
+        
+        # Source_File_Archive_SK (last column - SQLINT with \r\n)
+        idx = len(format_entries) + 1
+        entry = (
+            f"{idx}\t"
+            f"SQLINT\t"
+            f"0\t"
+            f"4\t"
+            f'"\\r\\n"\t'  # Row terminator for last column
+            f"{idx}\t"
+            f"Source_File_Archive_SK\t"
+            f"\"\""
+        )
+        format_entries.append(entry)
+    else:
+        # For fact tables, only add Inserted_Datetime at end
+        if "Inserted_Datetime" not in [row[1] for row in rows]:
+            idx = len(format_entries) + 1
+            entry = (
+                f"{idx}\t"
+                f"SQLCHAR\t"
+                f"0\t"
+                f"30\t"
+                f'"\\t"\t'  # Tab terminator (not last yet)
+                f"{idx}\t"
+                f"Inserted_Datetime\t"
+                f"SQL_Latin1_General_CP1_CI_AS"
+            )
+            format_entries.append(entry)
 
     # Write format file
     lines = []

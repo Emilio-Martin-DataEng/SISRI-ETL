@@ -1,0 +1,3 @@
+Place_Code	Place_Name	Place_Type	Principal_Code	Brand_Code	Address_Line_1	Address_Line_2	City	Province	Country	Latitude	Longitude	Phone	Email	Website	Inserted_Datetime
+PLACE001	Test Place 1	Store	PRINC001	BRAND001	123 Test St	Suburb	Test City	Gauteng	South Africa	-26.2041	28.0473	+27 11 111 2222	test@test.com	http://test.com	2026-03-10 17:30:00
+PLACE002	Test Place 2	Store	PRINC002	BRAND002	456 Main Ave	Area	Test City2	Western Cape	South Africa	-33.9249	18.4241	+27 22 333 4444	test2@test2.com	http://test2.com	2026-03-10 17:30:00
