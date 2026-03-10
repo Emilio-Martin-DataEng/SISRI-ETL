@@ -146,7 +146,7 @@ def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
         start_time=start_time,
         end_time=end_time,
         total_row_count=total_rows,
-        total_file_count=len(sources),
+        total_file_count = len(sources) if sources is not None else 0,
         process_status='Success',
         pattern='Full ETL Run'
     )

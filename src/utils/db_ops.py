@@ -207,10 +207,6 @@ def insert_source_file_archive(
 
 
 def generate_bcp_format_file(source_name: str, fmt_path: Path):
-    """
-    Generate BCP format file (.fmt) for a given source based on mapping metadata.
-    Automatically appends audit/lineage columns at the end.
-    """
     logger = logging.getLogger(__name__)
     logger.info(f"Generating BCP format file for {source_name} → {fmt_path}")
 
@@ -218,7 +214,6 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
     cursor = conn.cursor()
 
     try:
-        # Fetch column mappings (existing logic)
         cursor.execute("""
             SELECT Target_Column, Data_Type
             FROM [ETL].[Dim_Source_Imports_Mapping]
@@ -232,58 +227,59 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
             logger.warning(f"No mappings found for {source_name} - empty format file")
             return
 
-        # Build list of columns + forced audit columns
-        all_columns = list(columns)  # list of (Target_Column, Data_Type)
+        all_columns = list(columns)
         all_columns.append(('Inserted_Datetime', 'DATETIME'))
         all_columns.append(('Audit_Source_Import_SK', 'INT'))
         all_columns.append(('Source_File_Archive_SK', 'INT'))
 
-        # Total number of columns
         num_cols = len(all_columns)
 
-        # Start building .fmt content
-        fmt_lines = [
-            "15.0",                # Version
-            str(num_cols)          # Total columns
-        ]
+        fmt_lines = ["15.0", str(num_cols)]
 
         col_num = 1
         for col_name, data_type in all_columns:
-            # BCP type mapping (simplified - adjust for your real types)
-            if 'VARCHAR' in data_type.upper() or 'CHAR' in data_type.upper():
-                bcp_type = "SQLCHAR"
-                prefix_len = "0"
-                length = "8000"  # safe max for VARCHAR
-            elif 'INT' in data_type.upper():
+            data_type = (data_type or '').upper().strip()
+
+            # Determine BCP type and length
+            bcp_type = "SQLCHAR"
+            prefix_len = "0"
+            length = "8000"  # safe fallback
+
+            # Parse length from Data_Type (e.g. VARCHAR(255) → 255)
+            if '(' in data_type and ')' in data_type:
+                try:
+                    length = data_type.split('(')[1].split(')')[0].strip()
+                except:
+                    pass
+
+            if 'INT' in data_type:
                 bcp_type = "SQLINT"
-                prefix_len = "0"
                 length = "4"
-            elif 'DECIMAL' in data_type.upper():
-                bcp_type = "SQLCHAR"  # treat as string for safety
-                prefix_len = "0"
-                length = "50"
-            elif 'DATETIME' in data_type.upper():
-                bcp_type = "SQLCHAR"  # safer as string
-                prefix_len = "0"
-                length = "30"
-            else:
+            elif 'DECIMAL' in data_type:
                 bcp_type = "SQLCHAR"
-                prefix_len = "0"
-                length = "8000"
+                length = "50"
+            elif 'DATETIME' in data_type:
+                bcp_type = "SQLCHAR"
+                length = "30"
 
-            # Terminator: \t for all except last (\r\n)
-            terminator = "\\t" if col_num < num_cols else "\\r\\n"
+            terminator = r"\t" if col_num < num_cols else r"\r\n"
 
+            # Exact BCP non-native format (fixed widths, single space separators)
             fmt_line = (
-                f"{col_num:<8} {bcp_type:<10} {prefix_len:<8} {length:<8} "
-                f'"{terminator}" {col_num:<8} {col_name:<30} ""'
+                f"{col_num:8}" +           # 8 chars for host file field order
+                f" {bcp_type:9}" +         # 1 space + 9 for host data type
+                f" {prefix_len:7}" +       # 1 space + 7 for prefix length
+                f" {length:7}" +           # 1 space + 7 for data length
+                f' "{terminator}"' +       # space + quoted terminator
+                f" {col_num:8}" +          # 1 space + 8 for server column order
+                f" {col_name:30}" +        # 1 space + 30 for server column name
+                " \"\""                    # empty collation
             )
             fmt_lines.append(fmt_line)
             col_num += 1
 
-        # Write format file
         fmt_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(fmt_path, 'w', encoding='utf-8') as f:
+        with open(fmt_path, 'w', encoding='ascii', newline='\r\n') as f:
             f.write('\n'.join(fmt_lines) + '\n')
 
         logger.info(f"BCP format file generated: {fmt_path} ({num_cols} columns)")

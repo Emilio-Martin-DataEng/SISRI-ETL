@@ -1,8 +1,8 @@
 15.0
 6
-1        SQLCHAR    0        8000     "\t" 1        Principal_Code                 ""
-2        SQLCHAR    0        8000     "\t" 2        Brand_Code                     ""
-3        SQLCHAR    0        8000     "\t" 3        Brand_Name                     ""
-4        SQLCHAR    0        30       "\t" 4        Inserted_Datetime              ""
-5        SQLINT     0        4        "\t" 5        Audit_Source_Import_SK         ""
-6        SQLINT     0        4        "\r\n" 6        Source_File_Archive_SK         ""
+       1 SQLCHAR   0       255     "\t"        1 Principal_Code                 ""
+       2 SQLCHAR   0       255     "\t"        2 Brand_Code                     ""
+       3 SQLCHAR   0       255     "\t"        3 Brand_Name                     ""
+       4 SQLCHAR   0       30      "\t"        4 Inserted_Datetime              ""
+       5 SQLINT    0       4       "\t"        5 Audit_Source_Import_SK         ""
+       6 SQLINT    0       4       "\r\n"        6 Source_File_Archive_SK         ""
