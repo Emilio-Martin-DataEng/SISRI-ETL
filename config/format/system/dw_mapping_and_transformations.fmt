@@ -9,6 +9,6 @@
 7       SQLCHAR             0       1       "\t"       7     Is_Required                                ""
 8       SQLCHAR             0       500     "\t"       8     Default_Value                              SQL_Latin1_General_CP1_CI_AS
 9       SQLCHAR             0       500     "\t"       9     Validation_Rule                            SQL_Latin1_General_CP1_CI_AS
-10       SQLCHAR             0       50     "\t"       10     Sequence_Order                            SQL_Latin1_General_CP1_CI_AS
-11       SQLCHAR             0       500     "\t"      11     Description                              SQL_Latin1_General_CP1_CI_AS
-12      SQLCHAR             0       30      "\r\n"    12    Inserted_Datetime                          ""
+10      SQLCHAR             0       50      "\t"       10    Sequence_Order                             SQL_Latin1_General_CP1_CI_AS
+11      SQLCHAR             0       1000    "\t"       11    Description                                SQL_Latin1_General_CP1_CI_AS
+12      SQLCHAR             0       30      "\r\n"     12    Inserted_Datetime                          ""

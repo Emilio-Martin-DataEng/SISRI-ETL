@@ -216,7 +216,7 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
     ETL.Dim_Source_Imports_Mapping with dynamic data type mapping.
 
     Rules:
-    - One entry per Target_Column (Is_Deleted = 0), ordered by File_Mapping_SK
+    - One entry per Target_Column (Is_Deleted = 0), ordered by Ordinal_Position
     - Map Data_Type to proper BCP SQL type:
       * VARCHAR(n) -> SQLCHAR with length n
       * DECIMAL(m,n) -> SQLCHAR with length m+2 (for decimal point and sign)
@@ -232,11 +232,11 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
     try:
         cursor.execute(
             """
-            SELECT File_Mapping_SK, Source_Column, Target_Column, Data_Type
+            SELECT Ordinal_Position, Source_Column, Target_Column, Data_Type
             FROM ETL.Dim_Source_Imports_Mapping
             WHERE Source_Name = ?
               AND Is_Deleted = 0
-            ORDER BY File_Mapping_SK
+            ORDER BY Ordinal_Position
             """,
             source_name,
         )
@@ -259,15 +259,17 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
 
     # Map data types to BCP format
     def map_data_type_to_bcp(data_type: str) -> tuple:
-        """Map database data type to BCP format (sql_type, length)"""
+        """Map database data type to BCP format (sql_type, length)."""
         if data_type.startswith('VARCHAR'):
             # Extract length from VARCHAR(255)
             length = int(data_type.split('(')[1].split(')')[0])
             return 'SQLCHAR', length
         elif data_type.startswith('DECIMAL'):
-            # For DECIMAL(18,4), use length 20 (18 digits + decimal + sign + padding)
+            # For DECIMAL(18,4), use length 30 (18 digits + decimal point + sign + padding + safety)
             precision = int(data_type.split('(')[1].split(',')[0])
-            return 'SQLCHAR', precision + 2
+            return 'SQLCHAR', precision + 12  # Much more generous length for decimals
+        elif data_type == 'FLOAT':
+            return 'SQLCHAR', 50  # Generous length for float values
         elif data_type == 'INT':
             return 'SQLCHAR', 20  # Use SQLCHAR for integers too
         elif data_type.startswith('DATETIME'):
@@ -278,7 +280,7 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
 
     # Build format file entries
     format_entries = []
-    for idx, (file_mapping_sk, source_column, target_column, data_type) in enumerate(rows, start=1):
+    for idx, (ordinal_position, source_column, target_column, data_type) in enumerate(rows, start=1):
         sql_type, length = map_data_type_to_bcp(data_type)
         # All business columns use tab terminator
         entry = (
@@ -337,20 +339,28 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
         )
         format_entries.append(entry)
     else:
-        # For fact tables, only add Inserted_Datetime at end
-        if "Inserted_Datetime" not in [row[1] for row in rows]:
-            idx = len(format_entries) + 1
-            entry = (
-                f"{idx}\t"
-                f"SQLCHAR\t"
-                f"0\t"
-                f"30\t"
-                f'"\\t"\t'  # Tab terminator (not last yet)
-                f"{idx}\t"
-                f"Inserted_Datetime\t"
-                f"SQL_Latin1_General_CP1_CI_AS"
-            )
-            format_entries.append(entry)
+        # For fact tables, add all audit columns if they're not already in the mapping
+        audit_columns = [
+            ("Inserted_Datetime", "SQLCHAR", 30, "SQL_Latin1_General_CP1_CI_AS"),
+            ("Audit_Source_Import_SK", "SQLINT", 4, "\"\""),
+            ("Source_File_Archive_SK", "SQLINT", 4, "\"\"")
+        ]
+        
+        for col_name, sql_type, length, collation in audit_columns:
+            if col_name not in [row[2] for row in rows]:  # Check Target_Column
+                idx = len(format_entries) + 1
+                terminator = '"\\r\\n"' if col_name == "Source_File_Archive_SK" else '"\\t"'
+                entry = (
+                    f"{idx}\t"
+                    f"{sql_type}\t"
+                    f"0\t"
+                    f"{length}\t"
+                    f"{terminator}\t"
+                    f"{idx}\t"
+                    f"{col_name}\t"
+                    f"{collation}"
+                )
+                format_entries.append(entry)
 
     # Write format file
     lines = []
