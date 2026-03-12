@@ -130,21 +130,18 @@ def process_etl_config(force_ddl: bool = False):
         df_imports.to_csv(imports_path, sep='\t', index=False, header=False, encoding='utf-8',
                           lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
 
-        # Fix Source_File_Mapping to include all required columns
-        known_mapping_cols = [
-            'File_Mapping_SK', 'Source_Import_SK', 'Source_Name', 'Source_Column', 'Target_Column',
-            'Data_Type', 'Description', 'Is_Deleted', 'Inserted_Datetime', 'Updated_Datetime',
-            'Is_Type2_Attribute', 'Is_PK', 'Is_Required'
+        # Fix Source_File_Mapping to include only columns that exist in Excel and match source table
+        existing_columns = list(df_mapping.columns)
+        required_columns = [
+            'Source_Name', 'Source_Column', 'Target_Column',
+            'Data_Type', 'Ordinal_Position', 'Description', 'Is_Type2_Attribute', 'Is_PK', 'Is_Required', 'Inserted_Datetime'
         ]
-        df_mapping = df_mapping.reindex(columns=known_mapping_cols, fill_value=0)  # Fill missing with 0/defaults
+        
+        df_mapping = df_mapping.reindex(columns=required_columns, fill_value='')  # Fill missing with empty string
         # Set proper defaults for specific columns
-        if 'Source_Import_SK' not in df_mapping.columns or df_mapping['Source_Import_SK'].isna().all():
-            df_mapping['Source_Import_SK'] = 8
         if 'Inserted_Datetime' not in df_mapping.columns or df_mapping['Inserted_Datetime'].isna().all():
             df_mapping['Inserted_Datetime'] = now_str
-        if 'Updated_Datetime' in df_mapping.columns:
-            df_mapping['Updated_Datetime'] = None  # Keep as NULL
-        
+
         # Regenerate the CSV with all columns
         df_mapping.to_csv(mapping_path, sep='\t', index=False, header=False, encoding='utf-8',
                           lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
@@ -219,6 +216,16 @@ def process_etl_config(force_ddl: bool = False):
                         (generated_dir / f"SP_Merge_Dim_{source}.sql").write_text(merge_ddl)
 
             elif source_type == 'Fact_Sales':
+                # Generate ODS table DDL and conformed merge proc
+                source_mapping = df_mapping[df_mapping['Source_Name'] == source].to_dict('records')
+                
+                # Generate ODS table DDL (same pattern as dimensions)
+                if staging_table and force_this:
+                    logger.info(f"Generating ODS DDL for Fact_Sales source {source}")
+                    ods_ddl = generate_ods_table_ddl(source, source_mapping)
+                    (generated_dir / f"ODS_{source}.sql").write_text(ods_ddl)
+                    logger.info(f"Generated: ODS_{source}.sql")
+                
                 # Generate conformed merge proc
                 if conformed_target and conformed_merge_proc and conformed_target.strip():
                     source_mapping = df_conformed_mapping[df_conformed_mapping['Source_Name'] == source].to_dict('records')
