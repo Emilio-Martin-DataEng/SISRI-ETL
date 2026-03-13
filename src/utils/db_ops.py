@@ -12,9 +12,11 @@ import logging
 import pyodbc
 from datetime import datetime
 from pathlib import Path
+from src.config import get_db_config, PROJECT_ROOT
+from src.utils.logging_config import setup_logging
+from src.utils.bcp_type_mapper import BCPTypeMapper, BCPTypeMapping
 
-from src.config import get_db_config
-
+SYSTEM_BASE_PATH = lambda: PROJECT_ROOT
 
 def get_connection():
     db_cfg = get_db_config()
@@ -257,41 +259,19 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
     cursor.close()
     conn.close()
 
-    # Map data types to BCP format
-    def map_data_type_to_bcp(data_type: str) -> tuple:
-        """Map database data type to BCP format (sql_type, length)."""
-        if data_type.startswith('VARCHAR'):
-            # Extract length from VARCHAR(255)
-            length = int(data_type.split('(')[1].split(')')[0])
-            return 'SQLCHAR', length
-        elif data_type.startswith('DECIMAL'):
-            # For DECIMAL(18,4), use length 30 (18 digits + decimal point + sign + padding + safety)
-            precision = int(data_type.split('(')[1].split(',')[0])
-            return 'SQLCHAR', precision + 12  # Much more generous length for decimals
-        elif data_type == 'FLOAT':
-            return 'SQLCHAR', 50  # Generous length for float values
-        elif data_type == 'INT':
-            return 'SQLCHAR', 20  # Use SQLCHAR for integers too
-        elif data_type.startswith('DATETIME'):
-            return 'SQLCHAR', 30
-        else:
-            # Default to SQLCHAR with generous length
-            return 'SQLCHAR', 500
-
-    # Build format file entries
+    # Build format file entries using the reusable BCPTypeMapper
     format_entries = []
     for idx, (ordinal_position, source_column, target_column, data_type) in enumerate(rows, start=1):
-        sql_type, length = map_data_type_to_bcp(data_type)
-        # All business columns use tab terminator
-        entry = (
-            f"{idx}\t"
-            f"{sql_type}\t"
-            f"0\t"
-            f"{length}\t"
-            f'"\\t"\t'  # Tab terminator
-            f"{idx}\t"
-            f"{target_column}\t"  # Use Target_Column for BCP (database column name)
-            f"SQL_Latin1_General_CP1_CI_AS"
+        # Use the reusable BCPTypeMapper for consistent type mapping
+        bcp_mapping = BCPTypeMapper.map_sql_to_bcp(data_type)
+        
+        # Generate format file entry
+        entry = BCPTypeMapper.get_format_file_entry(
+            field_number=idx,
+            sql_type=bcp_mapping.sql_type,
+            length=bcp_mapping.length,
+            terminator=BCPTypeMapper.get_terminator(is_last_field=False),
+            column_name=target_column
         )
         format_entries.append(entry)
 
@@ -299,66 +279,57 @@ def generate_bcp_format_file(source_name: str, fmt_path: Path):
     if source_type == 'Dimension':
         # Inserted_Datetime (tab terminator, not last column)
         idx = len(format_entries) + 1
-        entry = (
-            f"{idx}\t"
-            f"SQLCHAR\t"
-            f"0\t"
-            f"30\t"
-            f'"\\t"\t'  # Tab terminator
-            f"{idx}\t"
-            f"Inserted_Datetime\t"
-            f"SQL_Latin1_General_CP1_CI_AS"
+        entry = BCPTypeMapper.get_format_file_entry(
+            field_number=idx,
+            sql_type='SQLCHAR',
+            length=30,
+            terminator=BCPTypeMapper.get_terminator(is_last_field=False),
+            column_name='Inserted_Datetime'
         )
         format_entries.append(entry)
         
         # Audit_Source_Import_SK (SQLINT)
         idx = len(format_entries) + 1
-        entry = (
-            f"{idx}\t"
-            f"SQLINT\t"
-            f"0\t"
-            f"4\t"
-            f'"\\t"\t'  # Tab terminator
-            f"{idx}\t"
-            f"Audit_Source_Import_SK\t"
-            f"\"\""
+        entry = BCPTypeMapper.get_format_file_entry(
+            field_number=idx,
+            sql_type='SQLINT',
+            length=4,
+            terminator=BCPTypeMapper.get_terminator(is_last_field=False),
+            column_name='Audit_Source_Import_SK',
+            collation='""'
         )
         format_entries.append(entry)
         
         # Source_File_Archive_SK (last column - SQLINT with \r\n)
         idx = len(format_entries) + 1
-        entry = (
-            f"{idx}\t"
-            f"SQLINT\t"
-            f"0\t"
-            f"4\t"
-            f'"\\r\\n"\t'  # Row terminator for last column
-            f"{idx}\t"
-            f"Source_File_Archive_SK\t"
-            f"\"\""
+        entry = BCPTypeMapper.get_format_file_entry(
+            field_number=idx,
+            sql_type='SQLINT',
+            length=4,
+            terminator=BCPTypeMapper.get_terminator(is_last_field=True),
+            column_name='Source_File_Archive_SK',
+            collation='""'
         )
         format_entries.append(entry)
     else:
         # For fact tables, add all audit columns if they're not already in the mapping
         audit_columns = [
-            ("Inserted_Datetime", "SQLCHAR", 30, "SQL_Latin1_General_CP1_CI_AS"),
-            ("Audit_Source_Import_SK", "SQLINT", 4, "\"\""),
-            ("Source_File_Archive_SK", "SQLINT", 4, "\"\"")
+            ("Inserted_Datetime", "SQLCHAR", 30),
+            ("Audit_Source_Import_SK", "SQLINT", 4),
+            ("Source_File_Archive_SK", "SQLINT", 4)
         ]
         
-        for col_name, sql_type, length, collation in audit_columns:
+        for col_idx, (col_name, sql_type, length) in enumerate(audit_columns):
             if col_name not in [row[2] for row in rows]:  # Check Target_Column
                 idx = len(format_entries) + 1
-                terminator = '"\\r\\n"' if col_name == "Source_File_Archive_SK" else '"\\t"'
-                entry = (
-                    f"{idx}\t"
-                    f"{sql_type}\t"
-                    f"0\t"
-                    f"{length}\t"
-                    f"{terminator}\t"
-                    f"{idx}\t"
-                    f"{col_name}\t"
-                    f"{collation}"
+                is_last = (col_idx == len(audit_columns) - 1)  # Last audit column
+                entry = BCPTypeMapper.get_format_file_entry(
+                    field_number=idx,
+                    sql_type=sql_type,
+                    length=length,
+                    terminator=BCPTypeMapper.get_terminator(is_last_field=is_last),
+                    column_name=col_name,
+                    collation='""' if sql_type != 'SQLCHAR' else 'SQL_Latin1_General_CP1_CI_AS'
                 )
                 format_entries.append(entry)
 

@@ -248,12 +248,12 @@ def process_fact_sales(source_name: str, force_ddl: bool = False, audit_id: int 
 
             total_rows += len(df)
 
-            # Archive file (simple move to archive subfolder)
+            # Archive file (copy to archive subfolder, keep original)
             archive_dir = data_dir / "archive"
             archive_dir.mkdir(exist_ok=True)
             archive_path = archive_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file_path.name}"
-            shutil.move(file_path, archive_path)
-            logger.debug(f"Archived to {archive_path}")
+            shutil.copy2(file_path, archive_path)  # copy2 preserves metadata
+            logger.debug(f"Copied to archive: {archive_path}")
 
         except Exception as e:
             logger.error(f"Error on {file_path.name}: {str(e)}")

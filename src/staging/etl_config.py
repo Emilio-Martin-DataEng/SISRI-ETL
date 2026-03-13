@@ -180,6 +180,11 @@ def process_etl_config(force_ddl: bool = False):
 
         generated_dir = PROJECT_ROOT / get_config("dw_ddl", "base_folder") / get_config("dw_ddl", "generated_folder")
         generated_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Clean up old generated files to prevent confusion
+        for old_file in generated_dir.glob("*.sql"):
+            old_file.unlink()
+            logger.info(f"Cleaned up old generated file: {old_file.name}")
 
         conn = get_connection()
         cursor = conn.cursor()
@@ -219,12 +224,14 @@ def process_etl_config(force_ddl: bool = False):
                 # Generate ODS table DDL and conformed merge proc
                 source_mapping = df_mapping[df_mapping['Source_Name'] == source].to_dict('records')
                 
-                # Generate ODS table DDL (same pattern as dimensions)
+                # Generate ODS table DDL (same pattern as dimensions) - move to run folder for auto-execution
                 if staging_table and force_this:
                     logger.info(f"Generating ODS DDL for Fact_Sales source {source}")
                     ods_ddl = generate_ods_table_ddl(source, source_mapping)
-                    (generated_dir / f"ODS_{source}.sql").write_text(ods_ddl)
-                    logger.info(f"Generated: ODS_{source}.sql")
+                    run_dir = PROJECT_ROOT / get_config("dw_ddl", "base_folder") / get_config("dw_ddl", "run_folder")
+                    run_dir.mkdir(parents=True, exist_ok=True)
+                    (run_dir / f"ODS_{source}.sql").write_text(ods_ddl)
+                    logger.info(f"Generated and moved to run folder: ODS_{source}.sql")
                 
                 # Generate conformed merge proc
                 if conformed_target and conformed_merge_proc and conformed_target.strip():

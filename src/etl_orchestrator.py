@@ -2,17 +2,35 @@
 
 from datetime import datetime
 import argparse
+import shutil
+from pathlib import Path
 
+from src.config import PROJECT_ROOT
 from src.staging.etl_config import process_etl_config
 from src.staging.source_import import process_source
-from src.utils.db_ops import log_audit_source_import, get_next_audit_import_id, execute_proc, get_connection, generate_bcp_format_file
-from src.utils.ddl_generator import apply_ddl_from_run, generate_dw_table_ddl, generate_ods_table_ddl 
- 
+from src.staging.fact_sales_import import process_fact_sales
+from src.utils.db_ops import (
+    log_audit_source_import,
+    get_next_audit_import_id,
+    execute_proc,
+    get_connection,
+)
+from src.utils.ddl_generator import apply_ddl_from_run
 from src.utils.logging_config import setup_logging
+
 
 def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
     logger = setup_logging("etl_orchestrator")
     start_time = datetime.now()
+    
+    # Clean temp directory to prevent relics
+    temp_dir = PROJECT_ROOT / "temp"
+    if temp_dir.exists():
+        logger.info(f"Cleaning temp directory: {temp_dir}")
+        shutil.rmtree(temp_dir)
+        temp_dir.mkdir(exist_ok=True)
+        logger.info("Temp directory cleaned successfully")
+    
     global_audit_id = get_next_audit_import_id()
     log_audit_source_import(
         global_audit_id,
@@ -25,7 +43,7 @@ def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
 
     if refresh_metadata or force_ddl:
         logger.info("Refreshing ETL metadata (config load)...")
-        process_etl_config(force_ddl=force_ddl)  # ← pass the flag
+        process_etl_config()  # config loader now handles DDL generation internally
     else:
         logger.info("Skipping ETL config load (use --refresh-metadata to force)")
 
@@ -79,13 +97,20 @@ def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
                 logger.info(f"Skipping merge for {source_name} (handled per file in source_import.py)")
 
             elif source_type == 'Fact_Sales':
-                # New fact path
-                from src.staging.fact_sales_import import process_fact_sales
+                # Fact Sales: load to ODS via fact_sales_import, then move to conformed staging via SP
                 rows_processed = process_fact_sales(source_name, force_ddl=force_ddl, audit_id=global_audit_id)
                 total_rows += rows_processed if rows_processed else 0
 
-                # For now, skip standard merge (we'll add fact-specific merge later)
-                logger.info(f"Fact_Sales {source_name} processed - standard merge skipped")
+                logger.info(f"Calling ETL.SP_Merge_Fact_Sales_ODS_to_Conformed for {source_name}")
+                execute_proc(
+                    "ETL.SP_Merge_Fact_Sales_ODS_to_Conformed",
+                    params=f"@SourceName='{source_name}', @Source_File_Archive_SK=-1, @Audit_Source_Import_SK={global_audit_id}",
+                )
+
+            elif source_type == 'Fact_Conformed':
+                # Move from conformed staging to DW.Fact_Sales
+                logger.info("Calling ETL.SP_Merge_Fact_Sales to load DW.Fact_Sales from staging")
+                execute_proc("ETL.SP_Merge_Fact_Sales")
 
             elif source_type == 'System':
                 logger.debug(f"Skipping System source: {source_name}")
@@ -94,24 +119,19 @@ def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
             else:
                 logger.warning(f"Unknown Source_Type '{source_type}' for {source_name} - skipping")
                 continue
-            # Phase 2: Run merge proc
-            # conn = get_connection()
-            # cursor = conn.cursor()
-            # cursor.execute("SELECT Merge_Proc_Name FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = ?", source_name)
-            # merge_proc_row = cursor.fetchone()
-            # merge_proc_name = merge_proc_row[0] if merge_proc_row and merge_proc_row[0] else f"ETL.SP_Merge_Dim_{source_name}"
-            # execute_proc(merge_proc_name)
-            # logger.debug(f"Merged {source_name} using {merge_proc_name}")
 
             # Update checkpoint
             try:
                 conn = get_connection()  # fresh
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     UPDATE [ETL].[Dim_Source_Imports] 
                     SET Last_Successful_Load_Datetime = GETDATE() 
                     WHERE Source_Name = ?
-                """, (source_name,))
+                    """,
+                    (source_name,),
+                )
                 conn.commit()
             except Exception as update_err:
                 logger.warning(f"Failed to update Last_Successful_Load_Datetime for {source_name}: {update_err}")
@@ -135,8 +155,8 @@ def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
             logger.error("Stopping execution. Restart from failed source.")
             break
 
-    logger.info("Applying any pending DDL scripts from run/ folder...")
-    apply_ddl_from_run()
+    # DDL apply is now controlled by etl_config / console UI; orchestrator just logs
+    logger.info("DDL apply (if any) should be driven by config/console; skipping automatic apply here.")
 
     end_time = datetime.now()
     log_audit_source_import(

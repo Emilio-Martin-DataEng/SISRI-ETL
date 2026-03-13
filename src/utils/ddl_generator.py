@@ -48,7 +48,8 @@ def generate_ods_table_ddl(source_name: str, columns: list[dict], schema: str = 
         if str(is_pk_val).strip().lower() in ('1', 'true', 'y', 'yes'):
             pk_cols.append(f"[{col_name}]")
 
-    # Always add standard audit columns
+    # Always add standard metadata columns for ODS tables
+    # These are system standards and must be present in all ODS tables
     column_defs.append("    [Inserted_Datetime] DATETIME NOT NULL")
     column_defs.append("    [Audit_Source_Import_SK] INT NOT NULL")
     column_defs.append("    [Source_File_Archive_SK] INT NOT NULL")
@@ -205,7 +206,10 @@ SET @UpdatedCount = 0;
 
 def apply_ddl_from_run():
     """
-    Executes all .sql files in DW_DDL/run/ folder.
+    Executes only ODS table DDL files in DW_DDL/run/ folder.
+    ODS tables: Automatically executed
+    Procedures & DW tables: Left in run/ for manual review and execution
+    
     Splits on GO and executes batches separately.
     On success: moves to archive/ with timestamp.
     On failure: leaves in run/, logs error, continues with next file.
@@ -224,12 +228,32 @@ def apply_ddl_from_run():
         print("No .sql files in run/ folder")
         return
 
-    print(f"Applying {len(sql_files)} DDL scripts from run/ folder...")
+    # Filter to only ODS table DDL files (not procedures or DW tables)
+    ods_files = []
+    other_files = []
+    
+    for sql_file in sql_files:
+        content = sql_file.read_text(encoding="utf-8")
+        # Check if this is an ODS table DDL (CREATE TABLE [ODS].[...])
+        if "CREATE TABLE [ODS]." in content.upper():
+            ods_files.append(sql_file)
+        else:
+            other_files.append(sql_file)
+    
+    if not ods_files:
+        print("No ODS table DDL files in run/ folder")
+        return
+    
+    print(f"Applying {len(ods_files)} ODS table DDL scripts from run/ folder...")
+    if other_files:
+        print(f"Note: {len(other_files)} other DDL files left for manual review:")
+        for f in other_files:
+            print(f"  - {f.name}")
 
     conn = get_connection()
     cursor = conn.cursor()
 
-    for sql_file in sql_files:
+    for sql_file in ods_files:
         try:
             sql_content = sql_file.read_text(encoding="utf-8")
             
@@ -262,11 +286,12 @@ def apply_ddl_from_run():
                     print(f"    ERROR in batch {i} of {sql_file.name}: {str(batch_e)}")
                     raise  # Stop on error, leave file in run/
 
-            # Archive on success
+            # Create backup but leave original in run folder (like dimension tables)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            archive_path = archive_dir / f"{sql_file.stem}_{ts}{sql_file.suffix}"
-            sql_file.rename(archive_path)
-            print(f"  SUCCESS: Applied and archived to {archive_path.name}")
+            backup_path = archive_dir / f"{sql_file.stem}_{ts}{sql_file.suffix}"
+            backup_path.write_text(sql_content, encoding="utf-8")
+            print(f"  SUCCESS: Applied and backed up to {backup_path.name}")
+            print(f"           Original file remains in run folder: {sql_file.name}")
 
         except Exception as e:
             conn.rollback()
@@ -278,12 +303,12 @@ def apply_ddl_from_run():
                 start_time=datetime.now(),
                 end_time=datetime.now(),
                 process_status='Failed',
-                exception_detail=f"DDL apply failed: {sql_file.name} - {str(e)}"
+                exception_detail=f"ODS DDL apply failed: {sql_file.name} - {str(e)}"
             )
 
     cursor.close()
     conn.close()
-    print("DDL apply complete.")
+    print("ODS DDL apply complete.")
 
 
 def generate_fact_to_conformed_merge_ddl(source_name: str, ods_table: str, conformed_table: str, mapping_rows: list[dict]) -> str:
@@ -320,89 +345,102 @@ BEGIN
     DECLARE @ProcName SYSNAME = N'{proc_name}';
     DECLARE @RowsInserted INT = 0;
     DECLARE @ErrMsg NVARCHAR(MAX);
+    DECLARE @SQL NVARCHAR(MAX);
+    DECLARE @SelectList NVARCHAR(MAX);
+    DECLARE @InsertList NVARCHAR(MAX);
     
     BEGIN TRY
-        DECLARE @sql NVARCHAR(MAX) = N'INSERT INTO {conformed_table} (';
+        -- Step 1: Validate source exists in Dim_Source_Imports
+        IF NOT EXISTS (
+            SELECT 1 FROM [ETL].[Dim_Source_Imports] 
+            WHERE Source_Name = @SourceName AND Is_Active = 1
+        )
+        BEGIN
+            RAISERROR('Source [%s] is not active in Dim_Source_Imports', 16, 1, @SourceName);
+        END
         
-        DECLARE @insert_cols NVARCHAR(MAX) = N'';
-        DECLARE @select_cols NVARCHAR(MAX) = N'';
+        -- Step 2: Build dynamic SELECT and INSERT lists from transformation rules
+        SELECT @InsertList = STRING_AGG(QUOTENAME(Conformed_Column), ', '),
+               @SelectList = STRING_AGG(
+            CASE 
+                WHEN Transformation_Type = 'Direct' 
+                    THEN N'COALESCE(s.' + QUOTENAME(ODS_Column) + ', ' + ISNULL(QUOTENAME(Default_Value, ''''), 'NULL') + ') AS ' + QUOTENAME(Conformed_Column)
+                WHEN Transformation_Type = 'Expression'
+                    THEN N'COALESCE(' + Transformation_Rule + ', ' + ISNULL(QUOTENAME(Default_Value, ''''), 'NULL') + ') AS ' + QUOTENAME(Conformed_Column)
+                WHEN Transformation_Type = 'Calculated'
+                    THEN Transformation_Rule + ' AS ' + QUOTENAME(Conformed_Column)
+                ELSE N'COALESCE(s.' + QUOTENAME(ODS_Column) + ', ' + ISNULL(QUOTENAME(Default_Value, ''''), 'NULL') + ') AS ' + QUOTENAME(Conformed_Column)
+            END, CHAR(13) + CHAR(10)
+        ) WITHIN GROUP (ORDER BY Sequence_Order)
+        FROM [ETL].[Dim_DW_Mapping_And_Transformations]
+        WHERE Source_Name = @SourceName AND Is_Deleted = 0;
         
-        -- Build dynamic columns from mappings
-        """
-    
-    # Add column building logic
-    for mapping in mapping_rows:
-        ods_col = mapping.get('ODS_Column', '')
-        conf_col = mapping.get('Conformed_Column', '')
-        trans_type = mapping.get('Transformation_Type', 'Direct')
-        trans_rule = mapping.get('Transformation_Rule', f'[{ods_col}]')
-        default_val = mapping.get('Default_Value', 'NULL')
+        -- Step 3: Validate we have transformation rules
+        IF @SelectList IS NULL
+        BEGIN
+            RAISERROR('No transformation rules found for source [%s] in Dim_DW_Mapping_And_Transformations', 16, 1, @SourceName);
+        END
         
-        if conf_col:
-            ddl += f"""
-        -- Add {conf_col}
-        SET @insert_cols += QUOTENAME('{conf_col}') + N', ';
-        """
-            
-            if trans_type == 'Direct':
-                ddl += f"""
-        SET @select_cols += N'COALESCE(osi.[{ods_col}], {default_val}) AS [{conf_col}], ';
-        """
-            elif trans_type == 'Expression':
-                ddl += f"""
-        SET @select_cols += N'COALESCE({trans_rule}, {default_val}) AS [{conf_col}], ';
-        """
-    
-    ddl += f"""
+        -- Step 4: Delete existing records by natural key to avoid duplicates
+        -- Build dynamic JOIN conditions for natural key columns
+        DECLARE @JoinConditions NVARCHAR(MAX) = (
+            SELECT STRING_AGG(
+                'c.' + QUOTENAME(Conformed_Column) + ' = s.' + QUOTENAME(ODS_Column), 
+                ' AND '
+            )
+            FROM [ETL].[Dim_DW_Mapping_And_Transformations]
+            WHERE Source_Name = @SourceName 
+              AND Is_Deleted = 0
+              AND Is_Key = 1  -- Only use key columns for the join
+        );
         
-        -- Remove trailing commas
-        IF LEN(@insert_cols) > 0
-            SET @insert_cols = LEFT(@insert_cols, LEN(@insert_cols) - 1);
-            
-        IF LEN(@select_cols) > 0
-            SET @select_cols = LEFT(@select_cols, LEN(@select_cols) - 1);
+        IF @JoinConditions IS NULL
+        BEGIN
+            RAISERROR('No key columns found for source [%s] in Dim_DW_Mapping_And_Transformations', 16, 1, @SourceName);
+        END
         
-        -- Add standard audit columns
-        SET @sql += @insert_cols + N',
+        SET @SQL = N'
+        DELETE c
+        FROM {conformed_table} c
+        INNER JOIN [ODS].' + QUOTENAME(@SourceName) + ' s ON ' + @JoinConditions;
+        
+        EXEC sp_executesql @SQL;
+        
+        DECLARE @RowsDeleted INT = @@ROWCOUNT;
+        PRINT CONCAT('Deleted ', @RowsDeleted, ' existing rows from Staging_Fact_Sales_Conformed');
+        
+        -- Step 5: Build final INSERT statement
+        SET @SQL = N'
+        INSERT INTO {conformed_table}
+        (
+            ' + @InsertList + ',
             [Inserted_Datetime], [Audit_Source_Import_SK], [Source_File_Archive_SK]
         )
-        SELECT ' + @select_cols + N',
+        SELECT 
+            ' + @SelectList + ',
             GETDATE() AS [Inserted_Datetime],
-            ' + CAST(@Audit_Source_Import_SK AS NVARCHAR(20)) + N' AS [Audit_Source_Import_SK],
-            ' + CAST(@Source_File_Archive_SK AS NVARCHAR(20)) + N' AS [Source_File_Archive_SK]
-        FROM {ods_table} osi;';
+            @Audit_Source_Import_SK AS [Audit_Source_Import_SK],
+            @Source_File_Archive_SK AS [Source_File_Archive_SK]
+        FROM [ODS].' + QUOTENAME(@SourceName) + ' s';
         
-        -- Debug
-        PRINT @sql;
-        
-        EXEC sp_executesql @sql;
-        
+        -- Step 6: Execute dynamic SQL
+        EXEC sp_executesql @SQL, 
+            N'@Audit_Source_Import_SK INT, @Source_File_Archive_SK INT',
+            @Audit_Source_Import_SK, @Source_File_Archive_SK;
+            
         SET @RowsInserted = @@ROWCOUNT;
         
-        PRINT CONCAT('Inserted ', @RowsInserted, ' rows into conformed staging for source ', @SourceName);
+        -- Step 7: Log success
+        PRINT CONCAT('Inserted ', @RowsInserted, ' rows from ', @SourceName, ' to Staging_Fact_Sales_Conformed');
         
     END TRY
     BEGIN CATCH
-        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-        
-        SELECT @ErrMsg = ERROR_MESSAGE();
-        DECLARE @ErrNum INT = ERROR_NUMBER();
-        DECLARE @ErrState INT = ERROR_STATE();
-        DECLARE @ErrLine INT = ERROR_LINE();
-        DECLARE @ErrSev INT = ERROR_SEVERITY();
-        
-        EXEC ETL.SP_Log_ETL_Error
-            @Procedure_Name = @ProcName,
-            @Error_Message = @ErrMsg,
-            @Error_Number = @ErrNum,
-            @Error_State = @ErrState,
-            @Error_Line = @ErrLine,
-            @Error_Severity = @ErrSev,
-            @Source_File_Archive_SK = @Source_File_Archive_SK,
-            @Audit_Source_Import_SK = @Audit_Source_Import_SK;
-        
-        THROW;
+        SET @ErrMsg = ERROR_MESSAGE();
+        RAISERROR('Error in %s: %s', 16, 1, @ProcName, @ErrMsg);
+        RETURN -1;
     END CATCH
+    
+    RETURN @RowsInserted;
 END;
 GO
 

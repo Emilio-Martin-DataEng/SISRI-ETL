@@ -1,6 +1,6 @@
 14.0
 11
-1	SQLCHAR	0	255	"\t"	1	Sales_Date	SQL_Latin1_General_CP1_CI_AS
+1	SQLCHAR	0	255	"\t"	1	Sales_Date_YYYY_MM_dd	SQL_Latin1_General_CP1_CI_AS
 2	SQLCHAR	0	255	"\t"	2	Store_Name	SQL_Latin1_General_CP1_CI_AS
 3	SQLCHAR	0	255	"\t"	3	Product_Name	SQL_Latin1_General_CP1_CI_AS
 4	SQLCHAR	0	255	"\t"	4	Barcode	SQL_Latin1_General_CP1_CI_AS
