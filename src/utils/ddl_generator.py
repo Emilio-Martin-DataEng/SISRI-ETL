@@ -364,12 +364,24 @@ BEGIN
                @SelectList = STRING_AGG(
             CASE 
                 WHEN Transformation_Type = 'Direct' 
-                    THEN N'COALESCE(s.' + QUOTENAME(ODS_Column) + ', ' + ISNULL(QUOTENAME(Default_Value, ''''), 'NULL') + ') AS ' + QUOTENAME(Conformed_Column)
+                    THEN N'COALESCE(s.' + QUOTENAME(ODS_Column) + ', ' + ISNULL(QUOTENAME(Default_Value), 'NULL') + ') AS ' + QUOTENAME(Conformed_Column)
                 WHEN Transformation_Type = 'Expression'
-                    THEN N'COALESCE(' + Transformation_Rule + ', ' + ISNULL(QUOTENAME(Default_Value, ''''), 'NULL') + ') AS ' + QUOTENAME(Conformed_Column)
+                    THEN N'COALESCE(' + Transformation_Rule + ', ' + ISNULL(QUOTENAME(Default_Value), 'NULL') + ') AS ' + QUOTENAME(Conformed_Column)
+                WHEN Transformation_Type = 'Date_SK'
+                    THEN N'CASE 
+                        WHEN TRY_CONVERT(DATE, s.' + QUOTENAME(ODS_Column) + ', 105) IS NOT NULL 
+                            THEN CONVERT(INT, FORMAT(TRY_CONVERT(DATE, s.' + QUOTENAME(ODS_Column) + ', 105), ''yyyyMMdd''))
+                        WHEN TRY_CONVERT(DATE, s.' + QUOTENAME(ODS_Column) + ', 23) IS NOT NULL 
+                            THEN CONVERT(INT, FORMAT(TRY_CONVERT(DATE, s.' + QUOTENAME(ODS_Column) + ', 23), ''yyyyMMdd''))
+                        WHEN TRY_CONVERT(DATE, s.' + QUOTENAME(ODS_Column) + ', 101) IS NOT NULL 
+                            THEN CONVERT(INT, FORMAT(TRY_CONVERT(DATE, s.' + QUOTENAME(ODS_Column) + ', 101), ''yyyyMMdd''))
+                        WHEN TRY_CONVERT(DATE, s.' + QUOTENAME(ODS_Column) + ', 111) IS NOT NULL 
+                            THEN CONVERT(INT, FORMAT(TRY_CONVERT(DATE, s.' + QUOTENAME(ODS_Column) + ', 111), ''yyyyMMdd''))
+                        ELSE ' + ISNULL(QUOTENAME(Default_Value), '''19000101''') + '
+                    END AS ' + QUOTENAME(Conformed_Column)
                 WHEN Transformation_Type = 'Calculated'
                     THEN Transformation_Rule + ' AS ' + QUOTENAME(Conformed_Column)
-                ELSE N'COALESCE(s.' + QUOTENAME(ODS_Column) + ', ' + ISNULL(QUOTENAME(Default_Value, ''''), 'NULL') + ') AS ' + QUOTENAME(Conformed_Column)
+                ELSE N'COALESCE(s.' + QUOTENAME(ODS_Column) + ', ' + ISNULL(QUOTENAME(Default_Value), 'NULL') + ') AS ' + QUOTENAME(Conformed_Column)
             END, CHAR(13) + CHAR(10)
         ) WITHIN GROUP (ORDER BY Sequence_Order)
         FROM [ETL].[Dim_DW_Mapping_And_Transformations]

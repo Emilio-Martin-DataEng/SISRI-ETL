@@ -244,10 +244,13 @@ def process_etl_config(force_ddl: bool = False):
                             conformed_table=conformed_target,
                             mapping_rows=source_mapping
                         )
-                        proc_filename = conformed_merge_proc.replace('[ETL].', '').replace(']', '') + '.sql'
-                        proc_file = generated_dir / proc_filename
+                        proc_filename = conformed_merge_proc.replace('[ETL].[', '').replace(']', '') + '.sql'
+                        # Move conformed target procedures to run folder for manual review
+                        run_dir = PROJECT_ROOT / get_config("dw_ddl", "base_folder") / get_config("dw_ddl", "run_folder")
+                        run_dir.mkdir(parents=True, exist_ok=True)
+                        proc_file = run_dir / proc_filename
                         proc_file.write_text(merge_ddl)
-                        logger.info(f"Generated: {proc_file}")
+                        logger.info(f"Generated and moved to run folder: {proc_filename}")
 
             # Common checkpoint update
             execute_proc('ETL.SP_Update_Source_Imports_Last_Checked', f"@SourceName = '{source}', @LastChecked = '{now_str}'")
