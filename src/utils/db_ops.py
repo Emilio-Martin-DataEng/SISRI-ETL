@@ -7,6 +7,7 @@
 # - Generating unique audit IDs (real insert, no dummy delete)
 # - Logging/updating audit records (including archive_file_name)
 
+import re
 import logging
 
 import pyodbc
@@ -17,6 +18,21 @@ from src.utils.logging_config import setup_logging
 from src.utils.bcp_type_mapper import BCPTypeMapper, BCPTypeMapping
 
 SYSTEM_BASE_PATH = lambda: PROJECT_ROOT
+
+# SQL identifier: Schema.Table, [Schema].[Table], or single part. Alphanumeric + underscore + dot + brackets.
+_SQL_IDENTIFIER_RE = re.compile(
+    r"^(?:\[?[A-Za-z_][A-Za-z0-9_]*\]?\.)?\[?[A-Za-z_][A-Za-z0-9_]*\]?$"
+)
+
+
+def _validate_sql_identifier(name: str, kind: str = "identifier") -> None:
+    """Raise ValueError if name is not a safe SQL identifier (schema.object, [schema].[object], or object)."""
+    if not name or not isinstance(name, str):
+        raise ValueError(f"Invalid {kind}: must be non-empty string")
+    s = name.strip()
+    if not s or not _SQL_IDENTIFIER_RE.match(s):
+        raise ValueError(f"Invalid {kind} '{name}': only alphanumeric, underscore, dot, brackets allowed")
+
 
 def get_connection():
     db_cfg = get_db_config()
@@ -31,6 +47,7 @@ def get_connection():
     return pyodbc.connect(conn_str)
 
 def truncate_table(table_name: str):
+    _validate_sql_identifier(table_name, "table_name")
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -45,21 +62,22 @@ def truncate_table(table_name: str):
         conn.close()
 
 
-def execute_proc(proc_name: str, params: str = None):
+def execute_proc(proc_name: str, params: str = None, params_dict: dict = None):
     """
     Executes a stored procedure.
-    
-    Examples:
-    - execute_proc('ETL.SP_Merge_Dim_Source_Imports')
-    - execute_proc('SomeProc', '@Param1=Value, @Param2=123')
+    - proc_name: validated identifier (e.g. ETL.SP_Merge_Dim_Source_Imports)
+    - params: legacy string (avoid for user/config input; use params_dict)
+    - params_dict: safe parameterized execution, e.g. {'@SourceName': 'X', '@Audit_Source_Import_SK': 1}
     """
+    _validate_sql_identifier(proc_name, "proc_name")
     conn = get_connection()
     cursor = conn.cursor()
-    
-    if params:
+
+    if params_dict is not None:
+        placeholders = ", ".join(f"{k}=?" for k in params_dict)
+        cursor.execute(f"EXEC {proc_name} {placeholders}", list(params_dict.values()))
+    elif params:
         cursor.execute(f"EXEC {proc_name} {params}")
-    else:
-        cursor.execute(f"EXEC {proc_name}")
     
     conn.commit()
     

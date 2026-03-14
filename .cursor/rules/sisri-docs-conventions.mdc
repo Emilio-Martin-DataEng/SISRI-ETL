@@ -1,0 +1,23 @@
+---
+description: Documentation structure and update conventions
+globs: docs/**/*.md, README.md
+alwaysApply: false
+---
+
+# SISRI Documentation Conventions
+
+## Key Docs
+- `README.md` - Quick start, architecture, links
+- `docs/Next-Steps-Plan.md` - Roadmap (Fact_Sales fix, Dim_Products conformed)
+- `docs/App-Structure-Guide.md` - Code structure
+- `docs/Admin-Instruction-Manual.md` - Operations
+- `docs/Check-In-Checklist.md` - Pre-commit steps
+
+## When Updating
+- Add links to `Next-Steps-Plan.md` when documenting roadmap items
+- Update `docs/Documentation-Summary.md` when adding new docs
+- Source types: Dimension, Dimension_Conformed, Fact_Sales, Fact_Conformed, System
+
+## Naming
+- Use PascalCase for source/table names in docs
+- Use backticks for code: `ETL.Staging_Fact_Sales_Conformed`

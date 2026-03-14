@@ -26,9 +26,10 @@
    - File discovery → read → sanitize → dedup (log rejects) → truncate ODS → BCP load → **individual merge per file**
 
 5. **DDL & Code Generation**
-   - `ddl_generator.py`
-   - Format files, ODS tables, DW dimensions, merge procs
+   - `src/dw/ddl_generator.py` — single consolidated generator
+   - Format files (`db_ops`), ODS tables, DW dimensions, merge procs, fact conformed merge
    - ** Dynamic DDL generation with SCD support**
+   - ** Combo approach**: ODS/staging auto-execute; DW tables/procs need human review
 
 6. **DB Access Layer**
    - `db_ops.py` & `db.py`
@@ -112,15 +113,12 @@ Complete SK Flow: File → Archive_SK → ODS → Merge Procedure → DW Dimensi
 - **Complete Audit Trail**: End-to-end data lineage
 - **Duplicate Handling**: 3 duplicates identified and excluded correctly
 
-## Next Phase – Fact Engine
+## Fact Engine – Implemented
 
-Extend pipeline for fact tables:
-- Fact mapping in Excel
-- Aggregation / FK lookup logic
-- Incremental vs full load
-- Append or merge strategy
-- ** Fact-specific auditing with file-level granularity**
+- ** Fact_Sales**: ODS → conformed staging via `SP_Merge_Fact_Sales_ODS_to_Conformed`
+- ** Fact_Conformed**: Conformed staging → `DW.Fact_Sales` via `ETL.SP_Merge_Fact_Sales`
+- ** Source types**: Dimension, Dimension_Conformed, Fact_Sales, Fact_Conformed, System
 
 ---
 
-** Status: Production Architecture with Complete SK Flow Implementation!**
+** Status: Production Architecture with Complete SK Flow and Fact Engine!**

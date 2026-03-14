@@ -31,15 +31,17 @@ Supports dimension tables (SCD Type 1 & 2) with metadata-driven configuration an
 - Flags: `--sources`, `--force-ddl`, `--refresh-metadata`
 - Filters business sources (Processing_Order > 1)
 - ** Executes merge procs with individual SK parameters per file**
-- ** Applies pending DDL scripts from `DW_DDL/run/`**
+- ** Supports Dimension, Dimension_Conformed, Fact_Sales, Fact_Conformed source types**
+- ** DDL apply driven by `process_etl_config` or console UI (option 2)**
 - ** Comprehensive error handling with file-level isolation**
 
 ### **DDL & Format Generation**
-- `ddl_generator.py`
-- ** Dynamic BCP format files (SQLCHAR, lengths from Data_Type, proper terminators)**
-- ** ODS table DDL (PK from Is_PK)**
-- ** DW dimension DDL (SCD1/SCD2 templates, metadata columns, active NK index)**
-- ** Merge proc generation (SCD1/2 logic with SK parameter support)**
+- `src/dw/ddl_generator.py` — single DDL generator (consolidated)
+- ** Dynamic BCP format files** (`db_ops.generate_bcp_format_file` — SQLCHAR, lengths from Data_Type, proper terminators)
+- ** ODS table DDL** (PK from Is_PK)
+- ** DW dimension DDL** (SCD1/SCD2 templates, metadata columns, active NK index)
+- ** Merge proc generation** (SCD1/2 logic, fact conformed merge)
+- ** Combo approach**: ODS/staging + conformed merge procs auto-execute; DW tables/procs need human review
 
 ### **DB Helpers**
 - `db_ops.py`: connect, truncate, execute proc, audit log
@@ -107,16 +109,19 @@ Supports dimension tables (SCD Type 1 & 2) with metadata-driven configuration an
 - **Error isolation**: Robust file-level error handling
 - **Format file generation**: Dynamic BCP format files working correctly
 
-## Still To Do – Fact Engine (fact-table-engine branch)
+## Fact Engine – Implemented
 
-- Fact table DDL generation
-- Fact mapping extension in Excel
-- ** Fact-specific processing with file-level granularity**
-- Aggregations, FK lookups, incremental
-- Merge/append logic for facts
-- ** Fact auditing with individual file tracking**
-- Orchestrator integration for fact sources
+- ** Fact_Sales**: ODS load via `fact_sales_import.py` → `SP_Merge_Fact_Sales_ODS_to_Conformed` → `ETL.Staging_Fact_Sales_Conformed`
+- ** Fact_Conformed**: `ETL.SP_Merge_Fact_Sales` → `DW.Fact_Sales`
+- ** Conformed merge proc** generated from `Dim_DW_Mapping_And_Transformations`
+- ** Orchestrator integration** for Fact_Sales and Fact_Conformed source types
+
+## Future Enhancements
+
+- Aggregations, FK lookups, incremental loads
+- Additional fact source types
+- Performance monitoring and metrics collection
 
 ---
 
-** Status: Production Implementation with Complete SK Flow and File-Level Granularity!**
+** Status: Production Implementation with Complete SK Flow, File-Level Granularity, and Fact Engine!**

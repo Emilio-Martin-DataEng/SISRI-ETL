@@ -1,0 +1,25 @@
+---
+description: Core SISRI ETL coding standards
+globs: src/**/*.py
+alwaysApply: false
+---
+
+# SISRI ETL Standards
+
+## Python & Logging
+- Use `setup_logging("module_name")` from `src.utils.logging_config`
+- Log errors with `logger.error(...)` and include exception detail
+- Avoid bare `except:`; catch specific exceptions or re-raise
+
+## Database Operations
+- Use `get_connection()` from `src.utils.db_ops`; never hardcode connection strings
+- Use `execute_proc(proc_name, params_dict={...})` for parameterized proc calls
+- Use `truncate_table("Schema.Table")`; identifiers validated for SQL injection
+
+## Paths
+- Use `PROJECT_ROOT` from `src.config` for project-relative paths
+- Use `Path` from pathlib; avoid hardcoded `\` or `/`
+
+## Error Handling
+- On ETL failure, log to `ETL.Fact_Audit_Source_Imports` via `log_audit_source_import`
+- Include `exception_detail` and `process_status='Failed'` on errors

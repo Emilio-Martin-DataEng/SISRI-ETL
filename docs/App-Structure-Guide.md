@@ -19,17 +19,19 @@ SISRI/
 │   ├── 📂 staging/                   # ETL processing modules
 │   │   ├── 📄 etl_config.py       # Configuration management
 │   │   ├── 📄 source_import.py     # File processing engine
-│   │   └── 📄 fact_sales_import.py # Fact processing (future)
+│   │   └── 📄 fact_sales_import.py # Fact_Sales processing (ODS → conformed)
+│   ├── 📂 dw/                        # Data warehouse DDL & execution
+│   │   ├── 📄 ddl_generator.py    # Single DDL generator (ODS, DW, merge procs)
+│   │   └── 📄 script_executor.py  # Execute scripts from DW_DDL/run/
 │   ├── 📂 utils/                     # Utility modules
 │   │   ├── 📄 db_ops.py           # Database operations
 │   │   ├── 📄 db.py               # BCP operations
-│   │   ├── 📄 ddl_generator.py    # Dynamic DDL generation
 │   │   ├── 📄 logging_config.py    # Logging setup
 │   │   └── 📄 rejected_rows.py    # Rejection handling
 │   ├── 📄 config.py                # Configuration loading
 │   └── 📄 etl_orchestrator.py    # Main coordinator
 ├── 📂 config/                       # Configuration files
-│   ├── 📄 etl_config.xlsx          # Source definitions
+│   ├── 📄 ETL_Config.xlsx          # Source definitions
 │   ├── 📂 format/sources/           # BCP format files
 │   └── 📂 DW_DDL/                 # Generated DDL scripts
 ├── 📂 raw/                          # Source data files
@@ -159,19 +161,8 @@ def process_etl_config(force_ddl: bool = False):
     Returns:
         None (updates database tables)
     """
-
-def generate_dw_ddl(source_name: str, source_config: pd.DataFrame):
-    """
-    Generate DDL for dimension tables
-    
-    Args:
-        source_name: Name of source
-        source_config: Configuration DataFrame
-    
-    Returns:
-        str: Generated DDL script
-    """
 ```
+DDL generation uses `src.dw.ddl_generator` (generate_ods_table_ddl, generate_dw_table_ddl, generate_merge_proc_ddl, generate_fact_to_conformed_merge_ddl).
 
 #### **Configuration Sheets**
 1. **Source_Imports**: Source definitions and processing order
@@ -186,23 +177,34 @@ def generate_dw_ddl(source_name: str, source_config: pd.DataFrame):
 
 ---
 
-### **4. Database Operations** (`src/utils/db_ops.py`)
+### **4. DDL Generator & Script Executor** (`src/dw/`)
+
+#### **Purpose**
+Single DDL generator for ODS tables, DW dimensions, merge procs, and fact conformed merge. Combo approach: ODS/staging and conformed merge procs auto-execute; DW tables/procs require human review.
+
+#### **Key Modules**
+- **ddl_generator.py**: `generate_ods_table_ddl`, `generate_dw_table_ddl`, `generate_merge_proc_ddl`, `generate_fact_to_conformed_merge_ddl`, `apply_ddl_from_run`
+- **script_executor.py**: `execute_run_folder_scripts` – runs auto-executable scripts from `DW_DDL/run/`
+
+#### **DDL Flow**
+1. `process_etl_config` generates scripts to `DW_DDL/generated/` or `DW_DDL/run/`
+2. Engineer copies approved scripts to `DW_DDL/run/`
+3. `apply_ddl_from_run` (in config) or `script_executor` (console option 2) executes ODS/staging/conformed scripts
+4. DW tables and DW merge procs stay in run/ for manual execution
+
+---
+
+### **5. Database Operations** (`src/utils/db_ops.py`)
 
 #### **Purpose**
 Database utility functions for stored procedure execution, format file generation, and archive management.
 
 #### **Key Functions**
 ```python
-def execute_proc(proc_name: str, params: str = None):
+def execute_proc(proc_name: str, params: str = None, params_dict: dict = None):
     """
-    Execute stored procedure with optional parameters
-    
-    Args:
-        proc_name: Full stored procedure name
-        params: Parameter string (e.g., '@param1=value1, @param2=value2')
-    
-    Returns:
-        None (logs execution)
+    Execute stored procedure. Use params_dict for safe parameterized execution.
+    proc_name and table names are validated against SQL injection.
     """
 
 def generate_bcp_format_file(source_name: str, output_path: Path):
@@ -237,7 +239,7 @@ def insert_source_file_archive(**kwargs) -> int:
 
 ---
 
-### **5. BCP Operations** (`src/utils/db.py`)
+### **6. BCP Operations** (`src/utils/db.py`)
 
 #### **Purpose**
 BCP bulk loading operations with format file integration and error handling.
@@ -287,7 +289,7 @@ Is_Active                 -- Active status flag
 Is_Deleted                -- Soft delete flag
 DW_Table_Name             -- Target dimension table
 Merge_Proc_Name          -- Merge procedure name
-Source_Type               -- Dimension/Fact/System
+Source_Type               -- Dimension, Dimension_Conformed, Fact_Sales, Fact_Conformed, System
 ```
 
 #### **ETL.Dim_Source_Imports_Mapping**

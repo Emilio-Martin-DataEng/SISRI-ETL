@@ -20,8 +20,8 @@ This document defines naming conventions and field population standards for the 
 - **Purpose:** Raw staging area for source data
 
 #### **Conformed Staging Tables**
-- **Format:** `[ETL].[Staging_Fact_{BusinessEntity}_Conformed]`
-- **Examples:** `[ETL].[Staging_Fact_Sales_Conformed]`
+- **Fact:** `[ETL].[Staging_Fact_{BusinessEntity}_Conformed]` (e.g. `Staging_Fact_Sales_Conformed`)
+- **Dimension:** `[ETL].[Staging_Dim_{BusinessEntity}_Conformed]` (e.g. `Staging_Dim_Products_Conformed`)
 - **Schema:** Always `ETL` (Extract-Transform-Load)
 - **Purpose:** Cleaned, conformed data ready for DW
 
@@ -68,7 +68,7 @@ This document defines naming conventions and field population standards for the 
 | **Source_Name** | ✅ | Manual | Unique identifier, PascalCase |
 | **Rel_Path** | ✅ | Manual | File path from raw/ folder |
 | **Staging_Table** | ✅ | ✅ `[ODS].[{Source_Name}]` | **CRITICAL for DDL generation** |
-| **Source_Type** | ✅ | Manual | `Dimension` or `Fact_Sales` |
+| **Source_Type** | ✅ | Manual | `Dimension`, `Dimension_Conformed`, `Fact_Sales`, `Fact_Conformed`, or `System` |
 
 #### **🔥 Fact_Sales Additional Required Fields**
 | Field | Required | Default | Auto-Generate | Notes |
@@ -240,10 +240,10 @@ WHERE Source_Name = 'Sales_Format_2';
 ### **🔧 Debug Commands**
 ```bash
 # Check current sources
-python -c "import pandas as pd; print(pd.read_excel('config/etl_config.xlsx', sheet_name='Source_Imports', engine='openpyxl')[['Source_Name', 'Staging_Table', 'Processing_Order']])"
+python -c "import pandas as pd; print(pd.read_excel('config/ETL_Config.xlsx', sheet_name='Source_Imports', engine='openpyxl')[['Source_Name', 'Staging_Table', 'Processing_Order']])"
 
 # Validate processing order
-python -c "import pandas as pd; df = pd.read_excel('config/etl_config.xlsx', sheet_name='Source_Imports', engine='openpyxl'); print(df['Processing_Order'].sort_values())"
+python -c "import pandas as pd; df = pd.read_excel('config/ETL_Config.xlsx', sheet_name='Source_Imports', engine='openpyxl'); print(df['Processing_Order'].sort_values())"
 ```
 
 ### **📋 Documentation Updates**

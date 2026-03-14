@@ -25,7 +25,10 @@ pip install -r requirements.txt
 
 ### **Run ETL**
 ```bash
-# Full ETL run (recommended)
+# Interactive console (recommended for first-time setup)
+python -m src.ui.console_app
+
+# Full ETL run (CLI)
 python -m src.etl_orchestrator
 
 # Specific sources only
@@ -100,9 +103,9 @@ Raw Excel Files → Source Import → ODS Tables → Merge Procedures → DW Dim
 ```
 SISRI/
 ├── config/
-│   ├── etl_config.xlsx          # Source configuration
-│   ├── format/sources/           # BCP format files
-│   └── DW_DDL/                # Generated DDL scripts
+│   ├── ETL_Config.xlsx          # Source configuration
+│   └── format/sources/           # BCP format files
+├── DW_DDL/                      # Generated DDL (generated/, run/, archive/)
 ├── src/
 │   ├── staging/                 # ETL processing modules
 │   ├── utils/                   # Database utilities
@@ -116,7 +119,7 @@ SISRI/
 
 ## 🔧 **Configuration**
 
-### **Source Configuration** (`config/etl_config.xlsx`)
+### **Source Configuration** (`config/ETL_Config.xlsx`)
 - **Source_Imports**: Source definitions and processing order
 - **Dim_Source_Imports_Mapping**: Column mappings and PK definitions
 - **DW_Mapping_And_Transformations**: Target table definitions
@@ -126,7 +129,7 @@ SISRI/
 base:
   file_root: "C:/SISRI/raw"
   config_folder: "config"
-  config_filename: "etl_config.xlsx"
+  config_filename: "ETL_Config.xlsx"
   
 database:
   server: "your_server"
@@ -170,6 +173,8 @@ database:
 - **[Technical Overview](docs/Technical-Overview.md)**: Implementation details
 - **[App Structure Guide](docs/App-Structure-Guide.md)**: Comprehensive code documentation
 - **[Admin Manual](docs/Admin-Instruction-Manual.md)**: Operational procedures
+- **[Risk Analysis](docs/Risk-Analysis.md)**: Security and operational risks
+- **[Next Steps Plan](docs/Next-Steps-Plan.md)**: Roadmap (Fact_Sales fix, Dim_Products conformed)
 
 ## 🎯 **Success Metrics**
 
@@ -187,7 +192,8 @@ database:
 
 ## 🚀 **Next Steps**
 
-- **Fact Engine Implementation**: Roadmap defined in `docs/Fact-Engine-Roadmap.md`
+- **Fact Engine**: Fact_Sales and Fact_Conformed implemented; see `docs/Fact-Engine-Roadmap.md` for enhancements
+- **Next Steps**: See `docs/Next-Steps-Plan.md` for roadmap (fix Fact_Sales, Dim_Products conformed dimension)
 - **Performance Monitoring**: Add metrics collection
 - **Automated Testing**: Expand test coverage
 - **Deployment Scripts**: Production deployment automation

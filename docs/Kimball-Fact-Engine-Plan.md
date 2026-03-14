@@ -194,7 +194,7 @@ Extend the SISRI ETL system to support Kimball fact tables, starting with Fact_S
 ## Phase 4: Fact Loading & Merging
 
 ### 4.1 Fact Table DDL Generation
-**Extension to ddl_generator.py:**
+**Extension to src/dw/ddl_generator.py:**
 - Fact table DDL templates
 - Constraint generation (PK, FK, CHECK)
 - Index strategy for fact queries
@@ -318,6 +318,16 @@ Extend the SISRI ETL system to support Kimball fact tables, starting with Fact_S
 - Resource utilization tracking
 - Error rate monitoring
 - Performance regression detection
+
+---
+
+## Conformed Dimension Extension (Dim_Products)
+
+Dim_Products will use the same conformed engine as Fact_Sales:
+- **Flow:** Multiple ODS sources → `ETL.Staging_Dim_Products_Conformed` → `DW.Dim_Products`
+- **Source_Type:** `Dimension_Conformed` for product sources
+- **Metadata:** Reuse `DW_Mapping_And_Transformations` with `Source_Name` = Products (and future product sources)
+- **See:** `docs/Next-Steps-Plan.md` for full implementation plan
 
 ---
 

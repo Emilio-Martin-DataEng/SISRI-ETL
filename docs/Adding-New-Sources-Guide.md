@@ -8,7 +8,7 @@ This guide provides the minimum requirements and automated approach for adding n
 ### **Absolute Minimum for New Source:**
 1. **Source_Name** - Unique identifier (e.g., "Avid", "NewBrand")
 2. **Rel_Path** - File path from raw folder (e.g., "raw/DATA/SALES/CLICKS/AVID")
-3. **Source_Type** - Either "Dimension" or "Fact_Sales"
+3. **Source_Type** - "Dimension", "Dimension_Conformed", "Fact_Sales", or "Fact_Conformed"
 
 ### **Everything Else Can Be Auto-Generated!**
 
@@ -72,7 +72,7 @@ source_name = 'YourSourceName'  # ← CHANGE
 source_type = 'Fact_Sales'       # ← CHANGE
 
 # Load existing config
-df_imports = pd.read_excel('c:/Users/Emilio/SISRI/config/etl_config.xlsx', sheet_name='Source_Imports', engine='openpyxl')
+df_imports = pd.read_excel('c:/Users/Emilio/SISRI/config/ETL_Config.xlsx', sheet_name='Source_Imports', engine='openpyxl')
 
 # Add new source with defaults
 new_import = {
@@ -104,7 +104,7 @@ df_imports.to_excel(backup_file, sheet_name='Source_Imports', index=False)
 print(f'Backup created: {backup_file}')
 
 # Update main config
-df_imports.to_excel('c:/Users/Emilio/SISRI/config/etl_config.xlsx', sheet_name='Source_Imports', index=False)
+df_imports.to_excel('c:/Users/Emilio/SISRI/config/ETL_Config.xlsx', sheet_name='Source_Imports', index=False)
 print(f'Added {source_name} to Excel config')
 "
 ```
@@ -229,7 +229,7 @@ default_mappings = [
 
 # Load existing mappings
 try:
-    df_mappings = pd.read_excel('c:/Users/Emilio/SISRI/config/etl_config.xlsx', sheet_name='DW_Mapping_And_Transformations', engine='openpyxl')
+    df_mappings = pd.read_excel('c:/Users/Emilio/SISRI/config/ETL_Config.xlsx', sheet_name='DW_Mapping_And_Transformations', engine='openpyxl')
 except:
     df_mappings = pd.DataFrame()
 
@@ -239,7 +239,7 @@ df_mappings = pd.concat([df_mappings, pd.DataFrame(default_mappings)], ignore_in
 # Backup and save
 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 df_mappings.to_excel(f'c:/Users/Emilio/SISRI/config/etl_config_mappings_backup_{timestamp}.xlsx', index=False)
-df_mappings.to_excel('c:/Users/Emilio/SISRI/config/etl_config.xlsx', sheet_name='DW_Mapping_And_Transformations', index=False)
+df_mappings.to_excel('c:/Users/Emilio/SISRI/config/ETL_Config.xlsx', sheet_name='DW_Mapping_And_Transformations', index=False)
 
 print(f'Added {len(default_mappings)} mappings for {source_name}')
 "

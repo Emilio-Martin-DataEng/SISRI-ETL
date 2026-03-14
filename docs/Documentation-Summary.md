@@ -36,6 +36,20 @@
    - ✅ Daily health check commands
    - ✅ Success verification procedures
 
+6. **[Risk-Analysis.md](Risk-Analysis.md)** - Security and operational risks
+   - ✅ Security (SQL injection mitigations, credentials)
+   - ✅ Data integrity, DDL, operational risks
+   - ✅ Priority actions and implemented mitigations
+
+7. **[Check-In-Checklist.md](Check-In-Checklist.md)** - Pre-commit validation
+   - ✅ Unit tests, import verification
+   - ✅ Optional smoke run and monitoring scripts
+
+8. **[Next-Steps-Plan.md](Next-Steps-Plan.md)** - Roadmap and next steps
+   - ✅ Fix Fact_Sales pipeline (SP_Merge_Fact_Sales_ODS_to_Conformed, Date_SK)
+   - ✅ Dim_Products as conformed dimension (same engine as Fact_Sales)
+   - ✅ Metadata extensions, documentation, Cursor rules
+
 ## 🚀 **Key Documentation Achievements**
 
 ### **✅ Current Implementation Status**
@@ -75,14 +89,16 @@
 - **Complete Data Lineage**: File → Archive → ODS → Merge → Dimension
 - **Duplicate Handling**: 3 duplicates identified and excluded correctly
 
-## 🎯 **Next Steps Documented**
+## 🎯 **Fact Engine Status**
 
-### **Fact Engine Roadmap**
-- **[Fact-Engine-Roadmap.md](Fact-Engine-Roadmap.md)** - Implementation plan
+### **Implemented**
+- **Fact_Sales**: ODS → conformed staging via `SP_Merge_Fact_Sales_ODS_to_Conformed`
+- **Fact_Conformed**: Conformed staging → `DW.Fact_Sales` via `ETL.SP_Merge_Fact_Sales`
+- Source types: Dimension, Fact_Sales, Fact_Conformed, System
+
+### **Roadmap**
+- **[Fact-Engine-Roadmap.md](Fact-Engine-Roadmap.md)** - Enhancement plan
 - **[Kimball-Fact-Engine-Plan.md](Kimball-Fact-Engine-Plan.md)** - Detailed technical plan
-- File-level granularity for fact processing
-- Individual merge execution for fact tables
-- Complete audit trail for fact engine
 
 ## 📚 **Documentation Usage**
 
@@ -95,11 +111,13 @@
 - Use **[Admin-Instruction-Manual.md](Admin-Instruction-Manual.md)** for daily operations
 - Follow **[README.md](../README.md)** for quick start procedures
 - Monitor using health check commands in admin manual
+- Review **[Risk-Analysis.md](Risk-Analysis.md)** for security and operational risks
 
 ### **For Project Management**
 - Review **[System-Architecture.md](System-Architecture.md)** for current status
 - Check **[Fact-Engine-Roadmap.md](Fact-Engine-Roadmap.md)** for next phase planning
 - Use metrics from all documentation for project status
+- Review **[Risk-Analysis.md](Risk-Analysis.md)** for risk priorities and mitigations
 
 ## 🔧 **Maintenance Procedures**
 

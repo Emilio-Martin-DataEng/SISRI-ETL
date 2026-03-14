@@ -48,7 +48,7 @@ def upload_via_bcp(
     error_log_path = logs_dir / error_log_name
     bcp_cmd.extend(["-e", str(error_log_path)])
 
-    print(f"BCP error log → {error_log_path}")
+    print(f"BCP error log -> {error_log_path}")
 
     # Mask password in debug output
     masked_cmd = [str(arg) for arg in bcp_cmd]  # force str conversion

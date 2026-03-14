@@ -1,0 +1,31 @@
+---
+description: DDL generator and DW_DDL path conventions
+globs: src/dw/**/*.py, DW_DDL/**/*.sql
+alwaysApply: false
+---
+
+# SISRI DDL Conventions
+
+## Paths
+- DDL base: `PROJECT_ROOT / get_config("dw_ddl", "base_folder", default="DW_DDL")`
+- Generated scripts: `DW_DDL/generated/` (tables, procs)
+- Run scripts: `DW_DDL/run/` (auto-executed: ODS, ETL staging, conformed merge procs)
+- Archive: `DW_DDL/archive/` (timestamped backups after apply)
+
+## Auto-Execution
+- **Auto:** ODS tables, ETL staging tables, conformed merge procs (`INTO [ETL].[STAGING_FACT*]`)
+- **Manual review:** DW tables, DW merge procs
+
+## Naming
+- ODS: `[ODS].[{Source_Name}]`
+- Conformed staging: `[ETL].[Staging_Fact_{Entity}_Conformed]` or `[ETL].[Staging_Dim_{Entity}_Conformed]`
+- Merge proc: `[ETL].[SP_Merge_Fact_Sales_ODS_to_Conformed]` (fact) or `SP_Merge_Dim_{Entity}_ODS_to_Conformed` (dimension)
+
+## DDL Generator
+- Single generator: `src/dw/ddl_generator.py`
+- Functions: `generate_ods_table_ddl`, `generate_dw_table_ddl`, `generate_merge_proc_ddl`, `generate_fact_to_conformed_merge_ddl`
+
+## Stored Procedure Conventions (ETL merge procs)
+- **Error logging:** CATCH block must call `ETL.SP_Log_ETL_Error` with `@Procedure_Name`, `@Error_Message`, `@Error_Number`, `@Error_State`, `@Error_Line`, `@Error_Severity`, `@Source_File_Archive_SK`, `@Audit_Source_Import_SK`; then `THROW`
+- **Idempotency:** Drop temp tables if exists before `SELECT INTO` (e.g. `IF OBJECT_ID('tempdb..#Staged') IS NOT NULL DROP TABLE #Staged`)
+- **Source_File_Archive_SK:** Flow from ODS into staging; use `COALESCE(s.[Source_File_Archive_SK], @Source_File_Archive_SK)` when building temp tables

@@ -15,7 +15,7 @@ from src.utils.db_ops import (
     execute_proc,
     get_connection,
 )
-from src.utils.ddl_generator import apply_ddl_from_run
+from src.dw.ddl_generator import apply_ddl_from_run
 from src.utils.logging_config import setup_logging
 
 
@@ -104,7 +104,11 @@ def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
                 logger.info(f"Calling ETL.SP_Merge_Fact_Sales_ODS_to_Conformed for {source_name}")
                 execute_proc(
                     "ETL.SP_Merge_Fact_Sales_ODS_to_Conformed",
-                    params=f"@SourceName='{source_name}', @Source_File_Archive_SK=-1, @Audit_Source_Import_SK={global_audit_id}",
+                    params_dict={
+                        "@SourceName": source_name,
+                        "@Source_File_Archive_SK": -1,
+                        "@Audit_Source_Import_SK": global_audit_id,
+                    },
                 )
 
             elif source_type == 'Fact_Conformed':

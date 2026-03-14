@@ -1,0 +1,110 @@
+# Check-In Checklist
+
+**Run these steps before every commit/check-in.**
+
+---
+
+## 1. Unit Tests
+
+**Core tests (no DB, always run):**
+```bash
+python -m pytest tests/test_smoke.py tests/test_ddl_generator.py -v
+```
+
+- **Goal:** 2 tests pass (smoke + BCP format file generation)
+- **No DB required**
+
+**Full suite (has known failures):**
+```bash
+python -m pytest tests/ -v --tb=short
+```
+- 5 tests currently fail (mocks out of date, integration tests need DB). Fix or skip as needed.
+
+---
+
+## 2. Import Verification
+
+```bash
+python -c "
+from src.etl_orchestrator import run_etl
+from src.staging.etl_config import process_etl_config
+from src.dw.ddl_generator import apply_ddl_from_run, generate_ods_table_ddl
+from src.utils.db_ops import truncate_table, execute_proc
+print('Imports OK')
+"
+```
+
+- **Goal:** No import errors
+- **Catches:** Broken refactors, missing modules
+
+---
+
+## 3. Lint (if configured)
+
+```bash
+# Optional - run if ruff/flake8/black is set up
+ruff check src/
+# or: flake8 src/
+```
+
+---
+
+## 4. Quick ETL Smoke (optional, requires DB)
+
+**When DB is available:**
+
+```bash
+# Full ETL: all sources, refresh metadata, force DDL
+python -m src.etl_orchestrator --refresh-metadata --force-ddl
+```
+
+- **Goal:** Config loads; all active sources process without error
+- **Note:** Fact_Sales pipeline uses temp-table conformed merge (see docs/Next-Steps-Plan.md)
+
+---
+
+## 5. Monitoring Scripts (optional)
+
+```bash
+python tools/monitoring/check_ods.py
+python tools/monitoring/check_mapping.py   # Validates config metadata; reports only, no fixes
+python tools/monitoring/check_staging.py
+python tools/monitoring/check_merge_procs.py
+python tools/monitoring/check_merge_logic.py
+```
+
+- **check_mapping:** Validates Source_Imports, Source_File_Mapping, DW_Mapping_And_Transformations. Reports issues; admin must fix spreadsheet and re-run metadata refresh.
+- **Goal:** ODS/staging/DW structure and merge procs are valid
+- **Requires:** DB connection
+
+---
+
+## Summary – Minimum for Every Check-In
+
+| Step | Command | Required |
+|------|---------|----------|
+| 1. Tests | `python -m pytest tests/test_smoke.py tests/test_ddl_generator.py -v` | Yes |
+| 2. Imports | `python -c "from src.etl_orchestrator import run_etl; from src.staging.etl_config import process_etl_config; from src.dw.ddl_generator import apply_ddl_from_run; from src.utils.db_ops import truncate_table, execute_proc; print('Imports OK')"` | Yes |
+| 3. Lint | `ruff check src/` (if configured) | Optional |
+| 4. Smoke | `python -m src.etl_orchestrator --refresh-metadata --force-ddl` | Optional (DB) |
+| 5. Monitoring | `python tools/monitoring/check_*.py` | Optional (DB) |
+
+---
+
+## One-Liner (Tests + Imports)
+
+```bash
+python -m pytest tests/test_smoke.py tests/test_ddl_generator.py -q && python -c "from src.etl_orchestrator import run_etl; from src.staging.etl_config import process_etl_config; print('OK')"
+```
+
+---
+
+## Known Test Failures (Full Suite)
+
+| Test | Reason |
+|------|--------|
+| `test_etl_config_missing_file_graceful_skip` | Path.glob is read-only, mock approach needs change |
+| `test_mapping_column_selection_handles_missing_columns` | Test expects extra columns dropped; not implemented |
+| `test_orchestrator_only_runs_business_sources` | Mock returns 2-tuple; orchestrator expects 4+ columns |
+| `test_process_source_truncates_ods` | Needs Excel + DB; integration test |
+| `test_deduplication_logs_duplicates` | Mock DataFrame missing Source_Name column |

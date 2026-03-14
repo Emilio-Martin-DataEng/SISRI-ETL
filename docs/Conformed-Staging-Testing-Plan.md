@@ -42,7 +42,7 @@ The generated merge procedure has **invalid column names with spaces**:
 ## 🚀 **Testing Plan Steps**
 
 ### Step 1: Fix Column Name Mapping
-- [ ] Update `ddl_generator.py` to use snake_case column names
+- [ ] Update `src/dw/ddl_generator.py` to use snake_case column names (if needed)
 - [ ] Ensure all generated column names match `Staging_Fact_Sales_Conformed` structure
 - [ ] Test merge procedure generation
 
@@ -86,3 +86,4 @@ The generated merge procedure has **invalid column names with spaces**:
 ---
 *Created: 2026-03-11*
 *Status: Ready for Implementation*
+*See also: docs/Next-Steps-Plan.md for Dim_Products conformed dimension extension*

@@ -1,28 +1,404 @@
 # src/dw/ddl_generator.py
 """
-Metadata-driven DDL generator for DW dimensions.
-- Detects mapping changes via Inserted_Datetime/Updated_Datetime
-- Outputs .sql to configurable generated/ folder
-- Column order follows File_Mapping_SK
-- Uses Is_PK for merge ON clause, Is_Type2_Attribute for SCD logic
+Single DDL generator for SISRI ETL.
+- ODS tables, DW dim tables, merge procs, fact conformed merge
+- Outputs to config/DW_DDL/generated/ or run/
+- Uses PROJECT_ROOT for DW_DDL base (consistent with etl_config)
 """
 
 import json
 from datetime import datetime
 from pathlib import Path
 
-from src.config import CONFIG_ROOT, get_config
-from src.utils.db_ops import get_connection
+from src.config import PROJECT_ROOT, get_config
+from src.utils.db_ops import get_connection, log_audit_source_import, get_next_audit_import_id
 
 
 def _get_ddl_paths():
-    base = CONFIG_ROOT / get_config("dw_ddl", "base_folder", default="DW_DDL")
+    """DW_DDL paths: project root / base_folder (consistent with etl_config)."""
+    base = PROJECT_ROOT / get_config("dw_ddl", "base_folder", default="DW_DDL")
     return {
         "generated": base / get_config("dw_ddl", "generated_folder", default="generated"),
         "run": base / get_config("dw_ddl", "run_folder", default="run"),
         "archive": base / get_config("dw_ddl", "archive_folder", default="archive"),
         "state": base / get_config("dw_ddl", "state_folder", default="state"),
     }
+
+
+# ---------------------------------------------------------------------------
+# ODS, DW dim, merge proc, fact conformed (from legacy utils.ddl_generator)
+# ---------------------------------------------------------------------------
+
+
+def generate_ods_table_ddl(source_name: str, columns: list[dict], schema: str = "ODS") -> str:
+    """Generate CREATE TABLE DDL for an ODS staging table from metadata mappings."""
+    column_defs = []
+    pk_cols = []
+
+    for col in columns:
+        col_name = col.get("Target_Column", "").strip()
+        if not col_name:
+            continue
+        data_type = col.get("Data_Type", "VARCHAR(255)").strip() or "VARCHAR(255)"
+        is_required = str(col.get("Is_Required", 0)).strip().lower() in ("1", "true", "y", "yes")
+        nullability = "NOT NULL" if is_required else "NULL"
+        column_defs.append(f"    [{col_name}] {data_type} {nullability}")
+        if str(col.get("Is_PK", 0)).strip().lower() in ("1", "true", "y", "yes"):
+            pk_cols.append(f"[{col_name}]")
+
+    column_defs.append("    [Inserted_Datetime] DATETIME NOT NULL")
+    column_defs.append("    [Audit_Source_Import_SK] INT NOT NULL")
+    column_defs.append("    [Source_File_Archive_SK] INT NOT NULL")
+
+    pk_clause = ""
+    if pk_cols:
+        pk_cols_str = ", ".join(pk_cols)
+        pk_clause = f""",
+    CONSTRAINT [PK_{source_name}] PRIMARY KEY CLUSTERED (
+        {pk_cols_str}
+    ) WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, 
+            ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]"""
+
+    return f"""-- ODS table for {source_name} (generated {datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
+IF OBJECT_ID('[{schema}].[{source_name}]', 'U') IS NOT NULL
+    DROP TABLE [{schema}].[{source_name}];
+GO
+
+CREATE TABLE [{schema}].[{source_name}] (
+{',\n'.join(column_defs)}
+{pk_clause}
+) ON [PRIMARY];
+GO
+
+ALTER TABLE [{schema}].[{source_name}] ADD DEFAULT (GETDATE()) FOR [Inserted_Datetime];
+GO
+"""
+
+
+def generate_dw_table_ddl(schema: str, table_name: str, columns: list[dict], timestamp: str) -> str:
+    """Generate DW dimension table DDL using SCD1/SCD2 templates."""
+    is_scd2 = any(
+        val in (1, 1.0, "1", True) or (isinstance(val, str) and val.strip() == "1")
+        for c in columns
+        for val in [c.get("Is_Type2_Attribute")]
+        if val is not None
+    )
+    pattern = "dim_table_scd_type2" if is_scd2 else "dim_table_scd_type1"
+    template_path = PROJECT_ROOT / "sp_templates" / f"{pattern}.template.sql"
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template missing: {template_path}")
+    template = template_path.read_text(encoding="utf-8")
+
+    sk_col = f"{table_name.replace('Dim_', '')}_SK"
+    data_defs = []
+    insert_cols = []
+    for col in columns:
+        col_name = col["Target_Column"].strip()
+        is_required = int(col.get("Is_Required", 0)) == 1
+        nullability = "NOT NULL" if is_required else "NULL"
+        data_defs.append(f", [{col_name}] {col['Data_Type']} {nullability}")
+        insert_cols.append(f"[{col_name}]")
+
+    nk_cols = [c["Target_Column"].strip() for c in columns if int(c.get("Is_PK", 0)) == 1]
+    nk_where = "WHERE [Row_Is_Current] = 1 AND [Is_Deleted] = 0" if is_scd2 else "WHERE [Is_Deleted] = 0"
+    unique_index_clause = (
+        f"CREATE UNIQUE NONCLUSTERED INDEX [UIX_NK_{table_name}_Active] "
+        f"ON [{schema}].[{table_name}] ({', '.join([f'[{c}]' for c in nk_cols])}) {nk_where};"
+        if nk_cols
+        else "-- No natural key columns defined - no unique index created"
+    )
+
+    return template.format(
+        schema=schema,
+        table_name=table_name,
+        sk_col=sk_col,
+        generated_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        timestamp=timestamp,
+        column_defs="\n".join(data_defs),
+        insert_columns=", ".join(insert_cols),
+        select_columns=", ".join(insert_cols),
+        unique_index_clause=unique_index_clause,
+    )
+
+
+def generate_merge_proc_ddl(source_name: str, staging_table: str, dw_table: str, columns: list[dict]) -> str:
+    """Generate merge proc DDL for dimension ODS -> DW using SCD1/SCD2 templates."""
+    is_scd2 = any(
+        val in (1, 1.0, "1", True) or (isinstance(val, str) and val.strip() == "1")
+        for c in columns
+        for val in [c.get("Is_Type2_Attribute")]
+        if val is not None
+    )
+    pattern = "scd_type2" if is_scd2 else "scd_type1"
+    template_path = PROJECT_ROOT / "sp_templates" / f"{pattern}.template.sql"
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template missing: {template_path}")
+    template = template_path.read_text(encoding="utf-8")
+
+    key_column = next((c["Target_Column"] for c in columns if int(c.get("Is_PK", 0)) == 1), "Source_Name")
+    type1_cols = [c for c in columns if int(c.get("Is_Type2_Attribute", 0)) != 1 and int(c.get("Is_PK", 0)) != 1]
+    update_columns = ", ".join([f"d.[{c['Target_Column']}] = o.[{c['Target_Column']}]" for c in type1_cols])
+    type1_where_changes = (
+        " OR ".join(
+            f"COALESCE(d.[{c['Target_Column']}], '') <> COALESCE(o.[{c['Target_Column']}], '')"
+            for c in type1_cols
+        )
+        or "1=0"
+    )
+    type2_cols = [c for c in columns if int(c.get("Is_Type2_Attribute", 0)) == 1]
+    type2_where_changes = (
+        " OR ".join(
+            f"COALESCE(d.[{c['Target_Column']}], '') <> COALESCE(o.[{c['Target_Column']}], '')"
+            for c in type2_cols
+        )
+        or "1=0"
+    )
+
+    type1_update_block = ""
+    if type1_cols:
+        type1_update_block = f"""-- Type 1: UPDATE changed attributes
+UPDATE d SET
+    {update_columns},
+    d.Updated_Datetime = GETDATE(),
+    d.Audit_Source_Import_SK = @Audit_Source_Import_SK,
+    d.Source_File_Archive_SK = @Source_File_Archive_SK
+FROM {dw_table} d
+INNER JOIN {staging_table} o ON d.[{key_column}] = o.[{key_column}]
+WHERE ({type1_where_changes});
+SET @UpdatedCount = @@ROWCOUNT;
+"""
+    else:
+        type1_update_block = """-- No Type 1 columns to update
+SET @UpdatedCount = 0;
+"""
+
+    return template.format(
+        dim_name=source_name,
+        dw_table=dw_table,
+        ods_table=staging_table,
+        generated_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        type1_update_block=type1_update_block,
+        type2_where_changes=type2_where_changes,
+        insert_columns=", ".join([f"[{c['Target_Column']}]" for c in columns]),
+        select_columns=", ".join([f"o.[{c['Target_Column']}]" for c in columns]),
+        join_condition=f"d.[{key_column}] = o.[{key_column}]",
+        key_column=key_column,
+    )
+
+
+def generate_fact_to_conformed_merge_ddl(
+    source_name: str, ods_table: str, conformed_table: str, mapping_rows: list[dict]
+) -> str:
+    """Generate merge proc for Fact_Sales ODS -> conformed staging (uses Dim_DW_Mapping_And_Transformations)."""
+    proc_name = "[ETL].[SP_Merge_Fact_Sales_ODS_to_Conformed]"
+    return f"""-- Generated merge procedure for {source_name}
+-- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+IF OBJECT_ID('{proc_name}', 'P') IS NOT NULL
+    DROP PROCEDURE {proc_name}
+GO
+
+CREATE PROCEDURE {proc_name}
+    @SourceName VARCHAR(100),
+    @Source_File_Archive_SK INT = -1,
+    @Audit_Source_Import_SK INT = -1
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    
+    DECLARE @ProcName SYSNAME = N'{proc_name}';
+    DECLARE @RowsInserted INT = 0;
+    DECLARE @SQL NVARCHAR(MAX);
+    DECLARE @SelectList NVARCHAR(MAX);
+    DECLARE @InsertList NVARCHAR(MAX);
+    
+    BEGIN TRY
+        IF NOT EXISTS (SELECT 1 FROM [ETL].[Dim_Source_Imports] WHERE Source_Name = @SourceName AND Is_Active = 1)
+            RAISERROR('Source [%s] is not active in Dim_Source_Imports', 16, 1, @SourceName);
+        
+        SELECT @InsertList = STRING_AGG(QUOTENAME(Conformed_Column), ', '),
+               @SelectList = STRING_AGG(
+            CASE 
+                WHEN Transformation_Type = 'Direct' 
+                    THEN N'COALESCE(s.' + QUOTENAME(ODS_Column) + ', ' + CASE WHEN Default_Value IS NULL OR LTRIM(RTRIM(ISNULL(Default_Value,''))) = '' THEN N'NULL' WHEN TRY_CAST(Default_Value AS BIGINT) IS NOT NULL THEN Default_Value ELSE N'''''' + REPLACE(ISNULL(Default_Value,''), '''''', '''''''''') + N'''''' END + ') AS ' + QUOTENAME(Conformed_Column)
+                WHEN Transformation_Type = 'Expression'
+                    THEN N'COALESCE(' + REPLACE(Transformation_Rule, '[' + ODS_Column + ']', 's.' + QUOTENAME(ODS_Column)) + ', ' + CASE WHEN Default_Value IS NULL OR LTRIM(RTRIM(ISNULL(Default_Value,''))) = '' THEN N'NULL' WHEN TRY_CAST(Default_Value AS BIGINT) IS NOT NULL THEN Default_Value ELSE N'''''' + REPLACE(ISNULL(Default_Value,''), '''''', '''''''''') + N'''''' END + ') AS ' + QUOTENAME(Conformed_Column)
+                WHEN Transformation_Type = 'Date_SK'
+                    THEN N'CASE WHEN TRY_CONVERT(DATE, s.' + QUOTENAME(ODS_Column) + ', ' +
+                    CASE WHEN LTRIM(RTRIM(ISNULL(Transformation_Rule,''))) = 'dd-MM-yyyy' THEN N'105' WHEN LTRIM(RTRIM(ISNULL(Transformation_Rule,''))) = 'yyyy/MM/dd' THEN N'111' WHEN LTRIM(RTRIM(ISNULL(Transformation_Rule,''))) = 'yyyy-MM-dd' THEN N'23' WHEN LTRIM(RTRIM(ISNULL(Transformation_Rule,''))) = 'MM/dd/yyyy' THEN N'101' WHEN LTRIM(RTRIM(ISNULL(Transformation_Rule,''))) = 'dd/MM/yyyy' THEN N'103' ELSE N'105' END +
+                    N') IS NOT NULL THEN CONVERT(INT, FORMAT(TRY_CONVERT(DATE, s.' + QUOTENAME(ODS_Column) + ', ' +
+                    CASE WHEN LTRIM(RTRIM(ISNULL(Transformation_Rule,''))) = 'dd-MM-yyyy' THEN N'105' WHEN LTRIM(RTRIM(ISNULL(Transformation_Rule,''))) = 'yyyy/MM/dd' THEN N'111' WHEN LTRIM(RTRIM(ISNULL(Transformation_Rule,''))) = 'yyyy-MM-dd' THEN N'23' WHEN LTRIM(RTRIM(ISNULL(Transformation_Rule,''))) = 'MM/dd/yyyy' THEN N'101' WHEN LTRIM(RTRIM(ISNULL(Transformation_Rule,''))) = 'dd/MM/yyyy' THEN N'103' ELSE N'105' END +
+                    N'), ''yyyyMMdd'')) ELSE ' + CASE WHEN Default_Value IS NULL OR LTRIM(RTRIM(ISNULL(Default_Value,''))) = '' THEN N'''19000101''' WHEN TRY_CAST(Default_Value AS BIGINT) IS NOT NULL THEN Default_Value ELSE N'''19000101''' END + ' END AS ' + QUOTENAME(Conformed_Column)
+                WHEN Transformation_Type = 'Calculated'
+                    THEN Transformation_Rule + ' AS ' + QUOTENAME(Conformed_Column)
+                ELSE N'COALESCE(s.' + QUOTENAME(ODS_Column) + ', ' + CASE WHEN Default_Value IS NULL OR LTRIM(RTRIM(ISNULL(Default_Value,''))) = '' THEN N'NULL' WHEN TRY_CAST(Default_Value AS BIGINT) IS NOT NULL THEN Default_Value ELSE N'''''' + REPLACE(ISNULL(Default_Value,''), '''''', '''''''''') + N'''''' END + ') AS ' + QUOTENAME(Conformed_Column)
+            END, N',' + CHAR(13) + CHAR(10)
+        ) WITHIN GROUP (ORDER BY Sequence_Order)
+        FROM [ETL].[Dim_DW_Mapping_And_Transformations]
+        WHERE Source_Name = @SourceName AND Is_Deleted = 0;
+        
+        IF @SelectList IS NULL
+            RAISERROR('No transformation rules found for source [%s] in Dim_DW_Mapping_And_Transformations', 16, 1, @SourceName);
+        
+        DECLARE @KeyJoinConditions NVARCHAR(MAX) = (
+            SELECT STRING_AGG('c.' + QUOTENAME(Conformed_Column) + ' = t.' + QUOTENAME(Conformed_Column), N' AND ')
+            FROM [ETL].[Dim_DW_Mapping_And_Transformations]
+            WHERE Source_Name = @SourceName AND Is_Deleted = 0 AND Is_Key = 1
+        );
+        
+        IF @KeyJoinConditions IS NULL
+            RAISERROR('No key columns found for source [%s] in Dim_DW_Mapping_And_Transformations', 16, 1, @SourceName);
+        
+        -- Temp table: apply all mappings/transformations once; then delete + insert in same batch
+        -- Idempotency: drop #Staged if exists before SELECT INTO
+        -- Source_File_Archive_SK: flow from ODS (COALESCE with param fallback)
+        SET @SQL = N'
+        IF OBJECT_ID(''tempdb..#Staged'') IS NOT NULL DROP TABLE #Staged;
+        SELECT ' + @SelectList + N', COALESCE(s.[Source_File_Archive_SK], @Source_File_Archive_SK) AS [Source_File_Archive_SK]
+        INTO #Staged FROM [ODS].' + QUOTENAME(@SourceName) + N' s;
+        DELETE c FROM {conformed_table} c INNER JOIN #Staged t ON ' + @KeyJoinConditions + N';
+        INSERT INTO {conformed_table}
+        (' + @InsertList + N',
+            [Inserted_Datetime], [Audit_Source_Import_SK], [Source_File_Archive_SK]
+        )
+        SELECT ' + @InsertList + N',
+            GETDATE(),
+            @Audit_Source_Import_SK,
+            t.[Source_File_Archive_SK]
+        FROM #Staged t';
+        EXEC sp_executesql @SQL, N'@Audit_Source_Import_SK INT, @Source_File_Archive_SK INT',
+            @Audit_Source_Import_SK, @Source_File_Archive_SK;
+        SET @RowsInserted = @@ROWCOUNT;
+        PRINT CONCAT('Inserted ', @RowsInserted, ' rows from ', @SourceName, ' to Staging_Fact_Sales_Conformed');
+        
+    END TRY
+    BEGIN CATCH
+        DECLARE
+            @ErrorMessage   NVARCHAR(MAX) = ERROR_MESSAGE(),
+            @ErrorNumber    INT           = ERROR_NUMBER(),
+            @ErrorState     INT           = ERROR_STATE(),
+            @ErrorLine      INT           = ERROR_LINE(),
+            @ErrorSeverity  INT           = ERROR_SEVERITY();
+
+        EXEC ETL.SP_Log_ETL_Error
+            @Procedure_Name         = @ProcName,
+            @Error_Message          = @ErrorMessage,
+            @Error_Number           = @ErrorNumber,
+            @Error_State            = @ErrorState,
+            @Error_Line             = @ErrorLine,
+            @Error_Severity         = @ErrorSeverity,
+            @Source_File_Archive_SK = @Source_File_Archive_SK,
+            @Audit_Source_Import_SK = @Audit_Source_Import_SK;
+
+        THROW;
+    END CATCH
+    RETURN @RowsInserted;
+END;
+GO
+"""
+
+
+def apply_ddl_from_run():
+    """
+    Execute only ODS table DDL files in DW_DDL/run/.
+    ODS tables: auto-executed. Procedures & DW tables: left in run/ for manual review.
+    On success: copy to archive/ with timestamp.
+    """
+    paths = _get_ddl_paths()
+    run_dir = paths["run"]
+    archive_dir = paths["archive"]
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    if not run_dir.exists():
+        print("No run folder found - skipping DDL apply")
+        return
+
+    sql_files = list(run_dir.glob("*.sql"))
+    if not sql_files:
+        print("No .sql files in run/ folder")
+        return
+
+    def _is_auto_executable(content: str) -> bool:
+        u = content.upper()
+        if "CREATE TABLE [ODS]." in u or "CREATE TABLE [ETL].[STAGING_" in u:
+            return True
+        if ("CREATE PROCEDURE" in u or "CREATE OR ALTER PROCEDURE" in u) and "INTO [ETL].[STAGING_FACT" in u:
+            return True
+        return False
+
+    auto_files = [f for f in sql_files if _is_auto_executable(f.read_text(encoding="utf-8"))]
+    other_files = [f for f in sql_files if f not in auto_files]
+
+    if not auto_files:
+        print("No ODS/staging table DDL files in run/ folder")
+        return
+
+    print(f"Applying {len(auto_files)} ODS/staging/conformed scripts (DW tables & DW merge procs need human review)...")
+    if other_files:
+        print(f"Note: {len(other_files)} DW/proc files left for manual review:")
+        for f in other_files:
+            print(f"  - {f.name}")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    for sql_file in auto_files:
+        try:
+            sql_content = sql_file.read_text(encoding="utf-8")
+            batches = []
+            current_batch = []
+            for line in sql_content.splitlines():
+                stripped = line.strip()
+                if stripped.upper() == "GO":
+                    if current_batch:
+                        batches.append("\n".join(current_batch))
+                    current_batch = []
+                else:
+                    current_batch.append(line)
+            if current_batch:
+                batches.append("\n".join(current_batch))
+
+            print(f"  Processing {sql_file.name} ({len(batches)} batches)")
+            for i, batch in enumerate(batches, 1):
+                batch = batch.strip()
+                if not batch:
+                    continue
+                try:
+                    cursor.execute(batch)
+                    conn.commit()
+                    print(f"    Batch {i}/{len(batches)} applied successfully")
+                except Exception as batch_e:
+                    conn.rollback()
+                    print(f"    ERROR in batch {i} of {sql_file.name}: {str(batch_e)}")
+                    raise
+
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = archive_dir / f"{sql_file.stem}_{ts}{sql_file.suffix}"
+            backup_path.write_text(sql_content, encoding="utf-8")
+            print(f"  SUCCESS: Applied and backed up to {backup_path.name}")
+            print(f"           Original file remains in run folder: {sql_file.name}")
+
+        except Exception as e:
+            conn.rollback()
+            print(f"  ERROR applying {sql_file.name}: {str(e)}")
+            log_audit_source_import(
+                audit_id=get_next_audit_import_id(),
+                source_import_sk=0,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                process_status="Failed",
+                exception_detail=f"ODS DDL apply failed: {sql_file.name} - {str(e)}",
+            )
+
+    cursor.close()
+    conn.close()
+    print("ODS DDL apply complete.")
+
+
+# ---------------------------------------------------------------------------
+# Metadata-driven change detection (optional; process_etl_config is primary)
+# ---------------------------------------------------------------------------
 
 
 def _get_state_path() -> Path:

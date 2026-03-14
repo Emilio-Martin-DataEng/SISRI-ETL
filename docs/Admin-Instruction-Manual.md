@@ -73,7 +73,7 @@ Full refresh + force DDL:
    - ** Create individual archive record per file**
    - Load via BCP to ODS with proper format files
    - ** Run merge procedure with individual SK parameters per file**
-3. Apply any pending DDL scripts from `DW_DDL/run/`
+3. Apply ODS/staging DDL from `DW_DDL/run/` (during config refresh; DW tables/procs need manual review)
 4. ** Log complete audit trail** with file-level granularity
 5. ** Log rejects/duplicates** with detailed error tracking
 
@@ -95,6 +95,7 @@ Full refresh + force DDL:
 | BCP errors         | `logs/bcp_errors_*.log`                                        | Rejected rows from BCP (bad data, nulls, etc.)|
 | ** Row counts in DW**   | `SELECT COUNT(*) FROM DW.Dim_Places` (etc.)                    | Expected vs loaded rows, SK verification      |
 | Format files       | `config\format\system\*.fmt` and `config\format\sources\*.fmt` | Recent timestamps after refresh               |
+| ** Config metadata** | `python tools/monitoring/check_mapping.py`                    | Validates Source_Imports, mappings, Date_SK formats; reports only |
 
 ### ** Current Production Status**
 
@@ -114,7 +115,15 @@ All dimensions are fully operational with perfect SK flow:
 - **Format error** → Re-run metadata refresh (now fixed with proper terminators)
 - **Missing sources** → Verify `Processing_Order > 1` and `Is_Active = 1` in `Dim_Source_Imports`
 
-## 6. Maintenance Tasks
+## 6. Console UI (Optional)
+
+Run `python -m src.ui.console_app` for interactive menu:
+- **1** Refresh config + generate DDL
+- **2** Apply DDL from `DW_DDL/run/` (ODS/staging/conformed only; DW needs manual review)
+- **3** Run full ETL
+- **4** List sources
+
+## 7. Maintenance Tasks
 
 - **Update mapping/sources** → Edit `ETL_Config.xlsx` → Run metadata refresh
 - **Clean up** → Periodically delete old files in `temp/`, `logs/`, `rejected/`
@@ -123,16 +132,17 @@ All dimensions are fully operational with perfect SK flow:
 - ** SK verification** → Check dimension tables for proper SK values (no more -1)
 - ** Archive monitoring** → Review `Fact_Source_File_Archive` for file processing history
 
-## 7. Support & Next Steps
+## 8. Support & Next Steps
 
 Contact development team for:
-- ** Fact table engine rollout** (roadmap defined)
+- ** Fact table enhancements** (Fact_Sales/Fact_Conformed implemented)
+- ** Conformed dimension** (Dim_Products via same engine; see docs/Next-Steps-Plan.md)
 - Custom stored procedures
 - Scheduled runs (e.g. via Windows Task Scheduler)
 - Email/Slack alerts on failures or high rejects
 - ** Performance monitoring** for file-level processing metrics
 
-## 8. ** Production Success Verification**
+## 9. ** Production Success Verification**
 
 ### **Daily Health Check Commands**
 

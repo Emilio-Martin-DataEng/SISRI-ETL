@@ -14,7 +14,6 @@ from src.config import get_config
 from src.etl_orchestrator import run_etl
 from src.staging.etl_config import process_etl_config
 from src.utils.db_ops import get_connection
-from src.dw.ddl_generator import generate_ddl_for_changed_sources
 from src.dw.script_executor import execute_run_folder_scripts
 
 
@@ -64,21 +63,16 @@ def _input_sources():
 
 
 def action_refresh_metadata_and_generate_ddl():
-    print("\n[1] Refreshing ETL config and generating DDL (if mappings changed)...")
+    print("\n[1] Refreshing ETL config and generating DDL...")
     start = datetime.now()
     process_etl_config()
-    changed = generate_ddl_for_changed_sources()
     duration = (datetime.now() - start).total_seconds()
-    if changed:
-        print(f"DDL generated for: {', '.join(changed)}")
-        print("Review scripts in config/DW_DDL/generated/, then copy approved ones to config/DW_DDL/run/.")
-    else:
-        print("No mapping changes detected; no new DDL generated.")
+    print("Review scripts in DW_DDL/generated/, copy approved ones to DW_DDL/run/, then run option 2 to apply.")
     print(f"Completed in {duration:.2f}s.")
 
 
 def action_apply_ddl():
-    print("\n[2] Applying DDL scripts from config/DW_DDL/run/ ...")
+    print("\n[2] Applying DDL scripts from DW_DDL/run/ ...")
     ok, errs = execute_run_folder_scripts()
     if ok:
         print(f"Executed and archived: {', '.join(ok)}")

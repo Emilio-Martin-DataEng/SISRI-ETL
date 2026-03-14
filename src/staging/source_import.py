@@ -173,6 +173,17 @@ def process_source(source_name: str, force_ddl: bool = False, audit_id: int = No
             logger.debug(f"Added audit columns: Audit_Source_Import_SK={audit_id}, Source_File_Archive_SK=0")
 
             temp_flat = temp_dir / f"{source_name}_{file_path.stem}_cleaned.txt"
+            df.to_csv(
+                temp_flat,
+                sep='\t',
+                index=False,
+                header=False,
+                encoding='utf-8',
+                lineterminator='\r\n',
+                quoting=csv.QUOTE_NONE,
+                escapechar='\\',
+                na_rep=''
+            )
             bcp_log = logs_dir / f"bcp_errors_{source_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
             truncate_table(f"ODS.{source_name}")
             upload_via_bcp(temp_flat, f"ODS.{source_name}", get_db_config(), str(fmt_path), 1)
@@ -214,8 +225,13 @@ def process_source(source_name: str, force_ddl: bool = False, audit_id: int = No
                 cursor.close()
                 conn.close()
                 
-                merge_params = f'@Audit_Source_Import_SK = {audit_id}, @Source_File_Archive_SK = {archive_sk}'
-                execute_proc(merge_proc_name, merge_params)
+                execute_proc(
+                    merge_proc_name,
+                    params_dict={
+                        "@Audit_Source_Import_SK": audit_id,
+                        "@Source_File_Archive_SK": archive_sk,
+                    },
+                )
                 logger.info(f"Merged {source_name} using {merge_proc_name} with Audit_SK={audit_id}, Archive_SK={archive_sk}")
                 
             except Exception as e:

@@ -20,14 +20,15 @@ from src.utils.db_ops import (
     get_source_import_sk,
     get_connection
 )
-from src.utils.ddl_generator import (
+from src.dw.ddl_generator import (
     apply_ddl_from_run,
     generate_ods_table_ddl,
     generate_dw_table_ddl,
     generate_merge_proc_ddl,
-    generate_fact_to_conformed_merge_ddl
+    generate_fact_to_conformed_merge_ddl,
 )
 from src.utils.logging_config import setup_logging
+from src.utils.check_mapping import run_check_mapping
 
 CONFIG_ROOT = Path(get_config("base", "config_folder", default="config"))
 
@@ -173,6 +174,17 @@ def process_etl_config(force_ddl: bool = False):
         execute_proc('ETL.SP_Merge_Dim_Source_Imports_Mapping')
         execute_proc('ETL.SP_Merge_Dim_DW_Mapping_And_Transformations')
 
+        # Validate mapping metadata after Dim tables loaded
+        success, issues = run_check_mapping()
+        if not success:
+            for msg in issues:
+                logger.error(msg)
+            raise RuntimeError(
+                f"Check mapping failed ({len(issues)} issue(s)). "
+                "Admin must correct ETL_Config.xlsx and re-run metadata refresh."
+            )
+        logger.info("Check mapping: OK")
+
         # Get all active sources (including Fact_Sales)
         active_sources = df_imports[
             (df_imports['Is_Active'] == '1')
@@ -237,7 +249,7 @@ def process_etl_config(force_ddl: bool = False):
                 if conformed_target and conformed_merge_proc and conformed_target.strip():
                     source_mapping = df_conformed_mapping[df_conformed_mapping['Source_Name'] == source].to_dict('records')
                     if source_mapping and force_this:
-                        logger.info(f"Generating conformed merge proc for {source} → {conformed_target}")
+                        logger.info(f"Generating conformed merge proc for {source} -> {conformed_target}")
                         merge_ddl = generate_fact_to_conformed_merge_ddl(
                             source_name=source,
                             ods_table=staging_table,
@@ -253,7 +265,10 @@ def process_etl_config(force_ddl: bool = False):
                         logger.info(f"Generated and moved to run folder: {proc_filename}")
 
             # Common checkpoint update
-            execute_proc('ETL.SP_Update_Source_Imports_Last_Checked', f"@SourceName = '{source}', @LastChecked = '{now_str}'")
+            execute_proc(
+                "ETL.SP_Update_Source_Imports_Last_Checked",
+                params_dict={"@SourceName": source, "@LastChecked": now_str},
+            )
 
         cursor.close()
         conn.close()
