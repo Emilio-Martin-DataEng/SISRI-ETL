@@ -6,7 +6,7 @@
 
 ## When to Run Scenario Tests
 
-**Run `--test full` after any config sheet changes:**
+**Run scenario tests after any config sheet changes:**
 - Source_Imports, Source_File_Mapping, DW_Mapping_And_Transformations
 - New source added, column mapping changed, conformed mapping updated
 - After `python -m src.admin.load_config` (metadata refresh)
@@ -69,6 +69,7 @@ python -m src.etl_orchestrator --test full
 - **Goal:** Operator + Admin entry points, selective sources, Fact_Conformed
 - **Runs:** 6 scenarios (help, Brands, Admin config, force-ddl scope, Fact_Conformed)
 - **When:** After editing ETL_Config.xlsx (Source_Imports, Source_File_Mapping, DW_Mapping_And_Transformations)
+- **Alternative:** `python -m pytest tests/test_scenarios.py -v` (secondary; use when running with other pytest tests)
 
 ---
 

@@ -51,7 +51,8 @@ def mock_excel_data():
         "Is_Active": ["1"],
         "DW_Table_Name": ["[DW].[Dim_Places]"],
         "Merge_Proc_Name": ["[ETL].[SP_Merge_Dim_Places]"],
-        "Force_DDL_Generation": ["0"]
+        "Source_Type": ["Dimension"],
+        "Is_Conformed_Target": ["0"],
     }
     mapping_data = {
         "Source_Name": ["Places"] * 3,

@@ -97,43 +97,92 @@ def get_source_import_sk(source_name: str) -> int:
     return sk
 
 
-def get_next_audit_import_id() -> int:
+def create_run(start_time: datetime = None, run_type: str = 'Data') -> int:
     """
-    Inserts a new real audit row with Start_Time and returns its ID.
-    Uses two separate executes to ensure the SELECT SCOPE_IDENTITY() result is available.
+    Inserts a new row into Fact_Run and returns Run_SK.
+    One run per orchestrator execution (data or config).
     """
     conn = get_connection()
     cursor = conn.cursor()
-    
     try:
-        # Step 1: Insert the real audit row (minimal data)
+        st = start_time or datetime.now()
         cursor.execute("""
-            INSERT INTO ETL.Fact_Audit_Source_Imports (Source_Import_SK, Start_Time)
-            VALUES (0, GETDATE());
-        """)
-        
-        # Step 2: Separate execute to get the newly inserted ID
-        cursor.execute("SELECT SCOPE_IDENTITY();")
-        
+            INSERT INTO ETL.Fact_Run (Start_Time, Process_Status, Run_Type)
+            OUTPUT INSERTED.Run_SK
+            VALUES (?, 'Running', ?);
+        """, st, run_type)
         row = cursor.fetchone()
         if row is None or row[0] is None:
-            raise RuntimeError("Failed to retrieve new Audit_Source_Import_SK")
-        
-        audit_id = int(row[0])
-        
+            raise RuntimeError("Failed to retrieve new Run_SK")
+        run_sk = int(row[0])
         conn.commit()
-        return audit_id
-    
+        return run_sk
     except Exception as e:
         conn.rollback()
-        raise RuntimeError(f"Failed to generate audit ID: {e}")
-    
+        raise RuntimeError(f"Failed to create run: {e}")
     finally:
         cursor.close()
         conn.close()
 
 
-# src/utils/db_ops.py (excerpt – replace the function)
+def create_audit_source_import(
+    run_sk: int,
+    source_import_sk: int,
+    start_time: datetime = None,
+) -> int:
+    """
+    Inserts a new row into Fact_Audit_Source_Imports (one per source per run).
+    Returns Audit_Source_Import_SK.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        st = start_time or datetime.now()
+        cursor.execute("""
+            INSERT INTO ETL.Fact_Audit_Source_Imports (Run_SK, Source_Import_SK, Start_Time, Process_Status)
+            OUTPUT INSERTED.Audit_Source_Import_SK
+            VALUES (?, ?, ?, 'Running');
+        """, run_sk, source_import_sk, st)
+        row = cursor.fetchone()
+        if row is None or row[0] is None:
+            raise RuntimeError("Failed to retrieve new Audit_Source_Import_SK")
+        audit_id = int(row[0])
+        conn.commit()
+        return audit_id
+    except Exception as e:
+        conn.rollback()
+        raise RuntimeError(f"Failed to create audit source import: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_next_audit_import_id() -> int:
+    """
+    DEPRECATED: Use create_run + create_audit_source_import.
+    Kept for backward compatibility; inserts legacy-style single audit row (Run_SK=NULL).
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO ETL.Fact_Audit_Source_Imports (Source_Import_SK, Start_Time)
+            VALUES (0, GETDATE());
+        """)
+        cursor.execute("SELECT SCOPE_IDENTITY();")
+        row = cursor.fetchone()
+        if row is None or row[0] is None:
+            raise RuntimeError("Failed to retrieve new Audit_Source_Import_SK")
+        audit_id = int(row[0])
+        conn.commit()
+        return audit_id
+    except Exception as e:
+        conn.rollback()
+        raise RuntimeError(f"Failed to generate audit ID: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
 
 def log_audit_source_import(
     audit_id: int,
@@ -176,7 +225,34 @@ def log_audit_source_import(
     conn.commit()
     cursor.close()
     conn.close()
-    
+
+
+def update_run(
+    run_sk: int,
+    end_time: datetime = None,
+    process_status: str = 'Success',
+    total_sources_processed: int = None,
+    total_rows_processed: int = None,
+    exception_detail: str = None,
+):
+    """Update Fact_Run with completion data."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE ETL.Fact_Run
+            SET End_Time = COALESCE(?, End_Time),
+                Process_Status = ?,
+                Total_Sources_Processed = COALESCE(?, Total_Sources_Processed),
+                Total_Rows_Processed = COALESCE(?, Total_Rows_Processed),
+                Exception_Detail = COALESCE(?, Exception_Detail)
+            WHERE Run_SK = ?
+        """, end_time, process_status, total_sources_processed, total_rows_processed, exception_detail, run_sk)
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
 
 def insert_source_file_archive(
     audit_id: int,

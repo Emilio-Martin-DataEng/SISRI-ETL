@@ -82,7 +82,7 @@ def process_source(source_name: str, force_ddl: bool = False, audit_id: int = No
         files = list(data_dir.glob("*.xlsx"))
         if not files:
             logger.error(f"No .xlsx files found in {data_dir} — check Rel_Path and file_root")
-            return 0
+            return (0, 0)
 
     logger.info(f"Found {len(files)} files to process")
 
@@ -264,5 +264,5 @@ def process_source(source_name: str, force_ddl: bool = False, audit_id: int = No
 
     # Get final rejected count from database
     final_rejected_count = rejected_handler.get_rejected_count()
-    logger.info(f"Completed {source_name}: {total_rows} rows loaded, {final_rejected_count} rows rejected")
-    return total_rows
+    logger.info(f"Completed {source_name}: {total_rows} rows loaded, {len(files)} files, {final_rejected_count} rows rejected")
+    return (total_rows, len(files))

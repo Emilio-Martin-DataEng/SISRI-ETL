@@ -24,6 +24,12 @@ Activate the virtual environment before running any commands.
 ## 2. Refresh Metadata (Admin)
 (Required after changing `ETL_Config.xlsx` – mapping, new sources, paths, etc.)
 
+**One-time migrations (if upgrading):**
+1. Run `DW_DDL/run/migration_system_tables_lineage.sql` to add lineage columns to system staging tables.
+2. Run `DW_DDL/run/migration_run_sk_and_audit_grain.sql` to create `ETL.Fact_Run` and add `Run_SK` to `Fact_Audit_Source_Imports`.
+3. Run `DW_DDL/run/migration_recreate_fact_audit_source_imports.sql` to recreate `Fact_Audit_Source_Imports` with `(Run_SK, Source_Import_SK)` unique where not deleted. **WARNING: Drops table; existing audit data is lost.**
+4. Run `DW_DDL/run/create_etl_reporting_views.sql` to create ETL reporting views (`VW_Run_Summary`, `VW_Run_Source_Audit`, `VW_Source_File_Archive`, `VW_ETL_Errors`, `VW_Rejected_Rows`, `VW_Run_Health_Summary`). Column names use spaces for human validation and system testing.
+
 Run:  
 `python -m src.admin.load_config`
 

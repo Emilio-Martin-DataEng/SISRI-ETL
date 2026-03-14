@@ -1,4 +1,4 @@
-"""Thin wrapper for integrated scenario tests. Prefer: python -m src.etl_orchestrator --test full"""
+"""Thin wrapper for integrated scenario tests. Primary: python -m src.etl_orchestrator --test full"""
 import sys
 from pathlib import Path
 

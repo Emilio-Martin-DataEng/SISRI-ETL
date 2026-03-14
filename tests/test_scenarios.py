@@ -1,6 +1,10 @@
 """Integrated scenario tests: Operator and Admin entry points.
-Run via: python -m src.etl_orchestrator --test full
-Or: python -m pytest tests/test_scenarios.py -v
+
+Primary (normal test run):
+    python -m src.etl_orchestrator --test full
+
+Alternative (pytest):
+    python -m pytest tests/test_scenarios.py -v
 """
 import subprocess
 import sys
@@ -11,12 +15,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS = [
     ("Operator --help", ["python", "-m", "src.etl_orchestrator", "--help"]),
     ("Admin --help", ["python", "-m", "src.admin.load_config", "--help"]),
-    ("Operator --sources Brands", ["python", "-m", "src.etl_orchestrator", "--sources", "Brands"]),
-    ("Admin --no-first-load", ["python", "-m", "src.admin.load_config", "--no-first-load"]),
+    ("Operator --sources Brands", ["python", "-m", "src.etl_orchestrator", "--sources", "Brands", "--no-report"]),
+    ("Admin --no-first-load", ["python", "-m", "src.admin.load_config", "--no-first-load", "--no-report"]),
     ("Admin --force-ddl --source Sales_Format_1 --no-first-load", [
-        "python", "-m", "src.admin.load_config", "--force-ddl", "--source", "Sales_Format_1", "--no-first-load"
+        "python", "-m", "src.admin.load_config", "--force-ddl", "--source", "Sales_Format_1", "--no-first-load", "--no-report"
     ]),
-    ("Operator Fact_Conformed", ["python", "-m", "src.etl_orchestrator", "--sources", "Staging_Fact_Sales_Conformed"]),
+    ("Operator Fact_Conformed", ["python", "-m", "src.etl_orchestrator", "--sources", "Staging_Fact_Sales_Conformed", "--no-report"]),
 ]
 
 

@@ -271,6 +271,12 @@ BEGIN
             @Audit_Source_Import_SK, @Source_File_Archive_SK;
         SET @RowsInserted = @@ROWCOUNT;
         PRINT CONCAT('Inserted ', @RowsInserted, ' rows from ', @SourceName, ' to Staging_Fact_Sales_Conformed');
+
+        -- QC: Update Fact_Audit_Source_Imports with Inserted_Count for Sales_Format_1/_2
+        IF @Audit_Source_Import_SK > 0
+            UPDATE [ETL].[Fact_Audit_Source_Imports]
+            SET Inserted_Count = @RowsInserted
+            WHERE Audit_Source_Import_SK = @Audit_Source_Import_SK;
         
     END TRY
     BEGIN CATCH

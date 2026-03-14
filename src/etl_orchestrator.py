@@ -12,14 +12,17 @@ from src.staging.source_import import process_source
 from src.staging.fact_sales_import import process_fact_sales
 from src.utils.db_ops import (
     log_audit_source_import,
-    get_next_audit_import_id,
+    create_run,
+    create_audit_source_import,
+    update_run,
     execute_proc,
     get_connection,
+    get_source_import_sk,
 )
 from src.utils.logging_config import setup_logging
 
 
-def run_etl(sources=None, force_ddl=False):
+def run_etl(sources=None, force_ddl=False, show_report_after=True):
     logger = setup_logging("etl_orchestrator")
     start_time = datetime.now()
     
@@ -31,15 +34,8 @@ def run_etl(sources=None, force_ddl=False):
         temp_dir.mkdir(exist_ok=True)
         logger.info("Temp directory cleaned successfully")
     
-    global_audit_id = get_next_audit_import_id()
-    log_audit_source_import(
-        global_audit_id,
-        source_import_sk=0,
-        start_time=start_time,
-        process_status='Running',
-        pattern='Full ETL Run'
-    )
-    logger.info(f"Full ETL run started at {start_time}")
+    run_sk = create_run(start_time=start_time, run_type='Data')
+    logger.info(f"Full ETL run started: Run_SK = {run_sk}")
 
     if sources is None:
         conn = get_connection()
@@ -80,10 +76,20 @@ def run_etl(sources=None, force_ddl=False):
 
         logger.info(f"Processing source: {source_name} (Type: {source_type}, Merge Proc: {merge_proc_name}, Staging: {staging_table})")
 
+        if source_type == 'System':
+            logger.debug(f"Skipping System source: {source_name}")
+            continue
+
+        source_import_sk = get_source_import_sk(source_name) or 0
+        audit_id = create_audit_source_import(run_sk, source_import_sk, start_time=start_time)
+        logger.info(f"Processing source: {source_name} (Audit_Source_Import_SK = {audit_id})")
+
+        rows_processed = 0
+        file_count = 0
         try:
             if source_type == 'Dimension':
                 # Existing dimension path
-                rows_processed = process_source(source_name, force_ddl=force_ddl, audit_id=global_audit_id)
+                rows_processed, file_count = process_source(source_name, force_ddl=force_ddl, audit_id=audit_id)
                 total_rows += rows_processed if rows_processed else 0
 
                 # Skip merge for dimensions (now handled per file in source_import.py)
@@ -91,7 +97,7 @@ def run_etl(sources=None, force_ddl=False):
 
             elif source_type == 'Fact_Sales':
                 # Fact Sales: load to ODS via fact_sales_import, then move to conformed staging via SP
-                rows_processed = process_fact_sales(source_name, force_ddl=force_ddl, audit_id=global_audit_id)
+                rows_processed, file_count = process_fact_sales(source_name, force_ddl=force_ddl, audit_id=audit_id)
                 total_rows += rows_processed if rows_processed else 0
 
                 logger.info(f"Calling ETL.SP_Merge_Fact_Sales_ODS_to_Conformed for {source_name}")
@@ -100,7 +106,7 @@ def run_etl(sources=None, force_ddl=False):
                     params_dict={
                         "@SourceName": source_name,
                         "@Source_File_Archive_SK": -1,
-                        "@Audit_Source_Import_SK": global_audit_id,
+                        "@Audit_Source_Import_SK": audit_id,
                     },
                 )
 
@@ -109,13 +115,21 @@ def run_etl(sources=None, force_ddl=False):
                 logger.info("Calling ETL.SP_Merge_Fact_Sales to load DW.Fact_Sales from staging")
                 execute_proc("ETL.SP_Merge_Fact_Sales")
 
-            elif source_type == 'System':
-                logger.debug(f"Skipping System source: {source_name}")
-                continue
-
             else:
                 logger.warning(f"Unknown Source_Type '{source_type}' for {source_name} - skipping")
                 continue
+
+            # Update source-level audit on success
+            rows_this_source = rows_processed if source_type in ('Dimension', 'Fact_Sales') else 0
+            log_audit_source_import(
+                audit_id,
+                source_import_sk=source_import_sk,
+                start_time=start_time,
+                end_time=datetime.now(),
+                total_row_count=rows_this_source,
+                total_file_count=file_count,
+                process_status='Success',
+            )
 
             # Update checkpoint
             try:
@@ -141,12 +155,20 @@ def run_etl(sources=None, force_ddl=False):
         except Exception as e:
             error_summary = str(e).split('\n')[-1] if str(e) else "Unknown error"
             log_audit_source_import(
-                global_audit_id,
-                source_import_sk=0,
+                audit_id,
+                source_import_sk=source_import_sk,
                 start_time=start_time,
                 end_time=datetime.now(),
                 process_status='Failed',
                 exception_detail=f"{source_name} failed: {error_summary}"
+            )
+            update_run(
+                run_sk,
+                end_time=datetime.now(),
+                process_status='Failed',
+                total_sources_processed=len(sources_rows),
+                total_rows_processed=total_rows,
+                exception_detail=f"{source_name} failed: {error_summary}",
             )
             logger.error(f"{source_name} failed - {error_summary}")
             logger.error("Stopping execution. Restart from failed source.")
@@ -154,20 +176,24 @@ def run_etl(sources=None, force_ddl=False):
 
 
     end_time = datetime.now()
-    log_audit_source_import(
-        global_audit_id,
-        source_import_sk=0,
-        start_time=start_time,
+    update_run(
+        run_sk,
         end_time=end_time,
-        total_row_count=total_rows,
-        total_file_count=len(sources_rows),
         process_status='Success',
-        pattern='Full ETL Run'
+        total_sources_processed=len(sources_rows),
+        total_rows_processed=total_rows,
     )
     logger.info(f"Full ETL run complete at {end_time}")
     logger.info(f"Duration: {(end_time - start_time).total_seconds():.2f}s")
     logger.info(f"Total rows processed: {total_rows}")
     logger.info(f"Processed {len(sources_rows)} sources")
+
+    if show_report_after:
+        try:
+            from tools.etl_run_report import show_report
+            show_report(run_sk=run_sk)
+        except Exception as e:
+            logger.warning(f"Could not open ETL report: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -175,10 +201,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--sources", nargs="+", default=None, help="Specific sources to process (default: all active)")
     parser.add_argument("--test", choices=["full"], default=None, help="Run integrated scenario tests (full)")
+    parser.add_argument("--no-report", action="store_true", help="Do not open ETL report in browser after run")
     args = parser.parse_args()
 
     if args.test == "full":
         from tests.test_scenarios import main as run_scenario_tests
         sys.exit(run_scenario_tests())
 
-    run_etl(sources=args.sources)
+    run_etl(sources=args.sources, show_report_after=not args.no_report)

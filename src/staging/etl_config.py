@@ -17,7 +17,9 @@ from src.utils.db_ops import (
     truncate_table,
     execute_proc,
     log_audit_source_import,
-    get_next_audit_import_id,
+    create_run,
+    create_audit_source_import,
+    update_run,
     get_source_import_sk,
     get_connection
 )
@@ -33,14 +35,15 @@ from src.utils.check_mapping import run_check_mapping
 
 CONFIG_ROOT = Path(get_config("base", "config_folder", default="config"))
 
-def process_etl_config(force_ddl: bool = False, source: str | None = None, run_first_load: bool = True):
+def _get_config_source_import_sk(table_name: str, fallback_sk: int) -> int:
+    """Get Source_Import_SK for config table; fallback if not in Dim_Source_Imports."""
+    sk = get_source_import_sk(table_name)
+    return sk if sk else fallback_sk
+
+
+def process_etl_config(force_ddl: bool = False, source: str | None = None, run_first_load: bool = True, show_report_after: bool = True):
     logger = setup_logging("etl_config")
     start_time = datetime.now()
-    config_source_sk = get_source_import_sk('Source_Imports')
-    if config_source_sk == 0:
-        logger.warning("No Source_Import_SK for 'Source_Imports' - using 0")
-
-    audit_id = get_next_audit_import_id()
 
     config_folder = get_config("base", "config_folder")
     if config_folder is None:
@@ -49,18 +52,19 @@ def process_etl_config(force_ddl: bool = False, source: str | None = None, run_f
 
     CONFIG_ROOT = Path(config_folder)
 
-    log_audit_source_import(
-        audit_id=audit_id,
-        source_import_sk=config_source_sk,
-        start_time=start_time,
-        end_time=None,
-        total_row_count=0,
-        total_file_count=0,
-        exception_detail=None,
-        pattern=None,
-        process_status='Running'
-    )
-    logger.info(f"Started audit entry: Audit_Source_Import_SK = {audit_id} (linked to Source_Import_SK = {config_source_sk})")
+    # Run model: one Run_SK, one Audit_Source_Import_SK per config source
+    run_sk = create_run(start_time=start_time, run_type='Config')
+    config_fallback_sk = get_source_import_sk('Source_Imports') or 0
+
+    sk_imports = _get_config_source_import_sk('Source_Imports', config_fallback_sk)
+    sk_mapping = _get_config_source_import_sk('Source_File_Mapping', config_fallback_sk)
+    sk_conformed = _get_config_source_import_sk('DW_Mapping_And_Transformations', config_fallback_sk)
+
+    audit_id_imports = create_audit_source_import(run_sk, sk_imports, start_time)
+    audit_id_mapping = create_audit_source_import(run_sk, sk_mapping, start_time)
+    audit_id_conformed = create_audit_source_import(run_sk, sk_conformed, start_time)
+
+    logger.info(f"Config run started: Run_SK = {run_sk}, Audit IDs: imports={audit_id_imports}, mapping={audit_id_mapping}, conformed={audit_id_conformed}")
 
     try:
         config_filename = get_config("base", "config_filename")
@@ -68,17 +72,11 @@ def process_etl_config(force_ddl: bool = False, source: str | None = None, run_f
 
         if not config_files:
             end_time = datetime.now()
-            log_audit_source_import(
-                audit_id=audit_id,
-                source_import_sk=config_source_sk,
-                start_time=start_time,
-                end_time=end_time,
-                total_row_count=0,
-                total_file_count=0,
-                exception_detail="Config spreadsheet not found",
-                pattern=None,
-                process_status='Skipped'
-            )
+            for aid, sk in [(audit_id_imports, sk_imports), (audit_id_mapping, sk_mapping), (audit_id_conformed, sk_conformed)]:
+                log_audit_source_import(aid, source_import_sk=sk, start_time=start_time, end_time=end_time,
+                    total_row_count=0, total_file_count=0, exception_detail="Config spreadsheet not found",
+                    pattern=None, process_status='Skipped')
+            update_run(run_sk, end_time=end_time, process_status='Skipped', exception_detail="Config spreadsheet not found")
             logger.warning(f"Config spreadsheet not found: {config_folder / config_filename}")
             return
 
@@ -122,6 +120,24 @@ def process_etl_config(force_ddl: bool = False, source: str | None = None, run_f
         if not df_conformed_mapping.empty:
             df_conformed_mapping['Inserted_Datetime'] = now_str
 
+        # Lineage: each config table gets its own audit_id; Source_File_Archive_SK = -1 (no file)
+        df_imports['Audit_Source_Import_SK'] = audit_id_imports
+        df_imports['Source_File_Archive_SK'] = -1
+        df_mapping['Audit_Source_Import_SK'] = audit_id_mapping
+        df_mapping['Source_File_Archive_SK'] = -1
+        if not df_conformed_mapping.empty:
+            df_conformed_mapping['Audit_Source_Import_SK'] = audit_id_conformed
+            df_conformed_mapping['Source_File_Archive_SK'] = -1
+
+        # Source_Imports: enforce column order (Force_DDL_Generation removed; use --force-ddl)
+        source_imports_columns = [
+            'Source_Name', 'Rel_Path', 'Pattern', 'Sheet_Name', 'Staging_Table',
+            'Processing_Order', 'Is_Active', 'Description', 'DW_Table_Name', 'Merge_Proc_Name',
+            'Source_Type', 'Is_Conformed_Target', 'Wholesaler_Code', 'Inserted_Datetime',
+            'Audit_Source_Import_SK', 'Source_File_Archive_SK'
+        ]
+        df_imports = df_imports.reindex(columns=source_imports_columns, fill_value='')
+
         temp_dir = PROJECT_ROOT / "temp"
         temp_dir.mkdir(exist_ok=True)
 
@@ -133,10 +149,10 @@ def process_etl_config(force_ddl: bool = False, source: str | None = None, run_f
                           lineterminator='\r\n', quoting=csv.QUOTE_NONE, escapechar='\\', na_rep='')
 
         # Fix Source_File_Mapping to include only columns that exist in Excel and match source table
-        existing_columns = list(df_mapping.columns)
         required_columns = [
             'Source_Name', 'Source_Column', 'Target_Column',
-            'Data_Type', 'Ordinal_Position', 'Description', 'Is_Type2_Attribute', 'Is_PK', 'Is_Required', 'Inserted_Datetime'
+            'Data_Type', 'Ordinal_Position', 'Description', 'Is_Type2_Attribute', 'Is_PK', 'Is_Required',
+            'Inserted_Datetime', 'Audit_Source_Import_SK', 'Source_File_Archive_SK'
         ]
         
         df_mapping = df_mapping.reindex(columns=required_columns, fill_value='')  # Fill missing with empty string
@@ -153,7 +169,8 @@ def process_etl_config(force_ddl: bool = False, source: str | None = None, run_f
                 'Source_Name', 'ODS_Column', 'Conformed_Column',
                 'Transformation_Type', 'Transformation_Rule',
                 'Is_Key', 'Is_Required', 'Default_Value',
-                'Validation_Rule', 'Sequence_Order','Description','Inserted_Datetime'
+                'Validation_Rule', 'Sequence_Order', 'Description', 'Inserted_Datetime',
+                'Audit_Source_Import_SK', 'Source_File_Archive_SK'
             ]
             df_conformed_mapping = df_conformed_mapping.reindex(columns=known_conformed_cols).fillna('')
             df_conformed_mapping.to_csv(conformed_path, sep='\t', index=False, header=False, encoding='utf-8',
@@ -209,7 +226,7 @@ def process_etl_config(force_ddl: bool = False, source: str | None = None, run_f
         sources_to_process = [source] if source else list(active_sources)
         for src in sources_to_process:
             cursor.execute("""
-                SELECT Source_Type, Staging_Table, DW_Table_Name, DW_Table_Name, Merge_Proc_Name, Force_DDL_Generation
+                SELECT Source_Type, Staging_Table, DW_Table_Name, DW_Table_Name, Merge_Proc_Name
                 FROM [ETL].[Dim_Source_Imports]
                 WHERE Source_Name = ?
             """, src)
@@ -218,8 +235,8 @@ def process_etl_config(force_ddl: bool = False, source: str | None = None, run_f
                 logger.warning(f"No config found for source {src}")
                 continue
 
-            source_type, staging_table, dw_table, conformed_target, conformed_merge_proc, force_this = row
-            force_this = force_ddl or (force_this == 1)
+            source_type, staging_table, dw_table, conformed_target, conformed_merge_proc = row
+            force_this = force_ddl  # DDL only when --force-ddl passed (Force_DDL_Generation removed from config)
 
             if source_type == 'Dimension':
                 # Existing dimension generation
@@ -286,33 +303,29 @@ def process_etl_config(force_ddl: bool = False, source: str | None = None, run_f
             run_etl(sources=None, force_ddl=force_ddl)
 
         end_time = datetime.now()
-        row_count = len(df_imports) + len(df_mapping) + len(df_conformed_mapping)
-        log_audit_source_import(
-            audit_id=audit_id,
-            source_import_sk=config_source_sk,
-            start_time=start_time,
-            end_time=end_time,
-            total_row_count=row_count,
-            total_file_count=1,
-            exception_detail=None,
-            pattern=config_filename,
-            process_status='Success'
-        )
+        log_audit_source_import(audit_id_imports, source_import_sk=sk_imports, start_time=start_time, end_time=end_time,
+            total_row_count=len(df_imports), total_file_count=1, process_status='Success', pattern=config_filename)
+        log_audit_source_import(audit_id_mapping, source_import_sk=sk_mapping, start_time=start_time, end_time=end_time,
+            total_row_count=len(df_mapping), total_file_count=1, process_status='Success', pattern=config_filename)
+        log_audit_source_import(audit_id_conformed, source_import_sk=sk_conformed, start_time=start_time, end_time=end_time,
+            total_row_count=len(df_conformed_mapping), total_file_count=1, process_status='Success', pattern=config_filename)
+        update_run(run_sk, end_time=end_time, process_status='Success',
+            total_sources_processed=3, total_rows_processed=len(df_imports) + len(df_mapping) + len(df_conformed_mapping))
         logger.info("ETL configuration loaded and merged successfully.")
+
+        if show_report_after:
+            try:
+                from tools.etl_run_report import show_report
+                show_report(run_sk=run_sk)
+            except Exception as rep_err:
+                logger.warning(f"Could not open ETL report: {rep_err}")
 
     except Exception as e:
         end_time = datetime.now()
-        log_audit_source_import(
-            audit_id=audit_id,
-            source_import_sk=config_source_sk,
-            start_time=start_time,
-            end_time=end_time,
-            total_row_count=0,
-            total_file_count=0,
-            exception_detail=str(e),
-            pattern=None,
-            process_status='Failed'
-        )
+        for aid, sk in [(audit_id_imports, sk_imports), (audit_id_mapping, sk_mapping), (audit_id_conformed, sk_conformed)]:
+            log_audit_source_import(aid, source_import_sk=sk, start_time=start_time, end_time=end_time,
+                total_row_count=0, total_file_count=0, exception_detail=str(e), process_status='Failed')
+        update_run(run_sk, end_time=end_time, process_status='Failed', exception_detail=str(e))
         logs_dir = PROJECT_ROOT / get_config("logs", "rel_path")
         logs_dir.mkdir(parents=True, exist_ok=True)
         error_log_path = logs_dir / f"etl_errors_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"

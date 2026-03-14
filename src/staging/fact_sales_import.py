@@ -122,7 +122,7 @@ def process_fact_sales(source_name: str, force_ddl: bool = False, audit_id: int 
     if row is None:
         logger.error(f"CRITICAL: No row found in [ETL].[Dim_Source_Imports] for Source_Name = '{source_name}'")
         logger.error("Check: Is_Active=1, Is_Deleted=0, correct Source_Name spelling/case")
-        return 0
+        return (0, 0)
     
     # Safe unpack with None checking
     rel_path = row[0] if row[0] is not None else None
@@ -139,7 +139,7 @@ def process_fact_sales(source_name: str, force_ddl: bool = False, audit_id: int 
 
     if not rel_path or not staging_table:
         logger.error("Incomplete config: Rel_Path or Staging_Table is NULL/empty")
-        return 0
+        return (0, 0)
 
  
     pattern = pattern or "*.xlsx"
@@ -159,7 +159,7 @@ def process_fact_sales(source_name: str, force_ddl: bool = False, audit_id: int 
     files = list(data_dir.glob(pattern))
     if not files:
         logger.warning(f"No files matching {pattern} in {data_dir}")
-        return 0
+        return (0, 0)
 
     logger.info(f"Found {len(files)} files for {source_name}")
 
@@ -260,5 +260,5 @@ def process_fact_sales(source_name: str, force_ddl: bool = False, audit_id: int 
             rejected_handler.log_rejected_row(file_path.name, 0, f"PROCESSING_ERROR: {str(e)[:200]}", {"error": str(e)})
 
     # Final audit logging (can mirror source_import's style)
-    logger.info(f"Completed {source_name}: {total_rows} rows loaded")
-    return total_rows
+    logger.info(f"Completed {source_name}: {total_rows} rows loaded, {len(files)} files")
+    return (total_rows, len(files))
