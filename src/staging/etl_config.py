@@ -1,4 +1,5 @@
 # src/staging/etl_config.py
+"""Admin config loader: Excel → metadata, optional DDL, first load. Used rarely (new source take-on)."""
 
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -32,7 +33,7 @@ from src.utils.check_mapping import run_check_mapping
 
 CONFIG_ROOT = Path(get_config("base", "config_folder", default="config"))
 
-def process_etl_config(force_ddl: bool = False):
+def process_etl_config(force_ddl: bool = False, source: str | None = None, run_first_load: bool = True):
     logger = setup_logging("etl_config")
     start_time = datetime.now()
     config_source_sk = get_source_import_sk('Source_Imports')
@@ -203,15 +204,18 @@ def process_etl_config(force_ddl: bool = False):
 
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-        for source in active_sources:
+        if source and source not in df_imports['Source_Name'].values:
+            raise ValueError(f"Source '{source}' not found in config. Check Source_Imports sheet.")
+        sources_to_process = [source] if source else list(active_sources)
+        for src in sources_to_process:
             cursor.execute("""
                 SELECT Source_Type, Staging_Table, DW_Table_Name, DW_Table_Name, Merge_Proc_Name, Force_DDL_Generation
                 FROM [ETL].[Dim_Source_Imports]
                 WHERE Source_Name = ?
-            """, source)
+            """, src)
             row = cursor.fetchone()
             if not row:
-                logger.warning(f"No config found for source {source}")
+                logger.warning(f"No config found for source {src}")
                 continue
 
             source_type, staging_table, dw_table, conformed_target, conformed_merge_proc, force_this = row
@@ -219,39 +223,39 @@ def process_etl_config(force_ddl: bool = False):
 
             if source_type == 'Dimension':
                 # Existing dimension generation
-                source_mapping = df_mapping[df_mapping['Source_Name'] == source].to_dict('records')
+                source_mapping = df_mapping[df_mapping['Source_Name'] == src].to_dict('records')
                 if staging_table and dw_table:
                     if force_this:
-                        logger.info(f"Generating DDL for dimension {source}")
-                        ods_ddl = generate_ods_table_ddl(source, source_mapping)
-                        (generated_dir / f"ODS_{source}.sql").write_text(ods_ddl)
+                        logger.info(f"Generating DDL for dimension {src}")
+                        ods_ddl = generate_ods_table_ddl(src, source_mapping)
+                        (generated_dir / f"ODS_{src}.sql").write_text(ods_ddl)
 
-                        dw_ddl = generate_dw_table_ddl('DW', f"Dim_{source}", source_mapping, timestamp)
-                        (generated_dir / f"DW_Dim_{source}.sql").write_text(dw_ddl)
+                        dw_ddl = generate_dw_table_ddl('DW', f"Dim_{src}", source_mapping, timestamp)
+                        (generated_dir / f"DW_Dim_{src}.sql").write_text(dw_ddl)
 
-                        merge_ddl = generate_merge_proc_ddl(source, staging_table, dw_table, source_mapping)
-                        (generated_dir / f"SP_Merge_Dim_{source}.sql").write_text(merge_ddl)
+                        merge_ddl = generate_merge_proc_ddl(src, staging_table, dw_table, source_mapping)
+                        (generated_dir / f"SP_Merge_Dim_{src}.sql").write_text(merge_ddl)
 
             elif source_type == 'Fact_Sales':
                 # Generate ODS table DDL and conformed merge proc
-                source_mapping = df_mapping[df_mapping['Source_Name'] == source].to_dict('records')
+                source_mapping = df_mapping[df_mapping['Source_Name'] == src].to_dict('records')
                 
                 # Generate ODS table DDL (same pattern as dimensions) - move to run folder for auto-execution
                 if staging_table and force_this:
-                    logger.info(f"Generating ODS DDL for Fact_Sales source {source}")
-                    ods_ddl = generate_ods_table_ddl(source, source_mapping)
+                    logger.info(f"Generating ODS DDL for Fact_Sales source {src}")
+                    ods_ddl = generate_ods_table_ddl(src, source_mapping)
                     run_dir = PROJECT_ROOT / get_config("dw_ddl", "base_folder") / get_config("dw_ddl", "run_folder")
                     run_dir.mkdir(parents=True, exist_ok=True)
-                    (run_dir / f"ODS_{source}.sql").write_text(ods_ddl)
-                    logger.info(f"Generated and moved to run folder: ODS_{source}.sql")
+                    (run_dir / f"ODS_{src}.sql").write_text(ods_ddl)
+                    logger.info(f"Generated and moved to run folder: ODS_{src}.sql")
                 
                 # Generate conformed merge proc
                 if conformed_target and conformed_merge_proc and conformed_target.strip():
-                    source_mapping = df_conformed_mapping[df_conformed_mapping['Source_Name'] == source].to_dict('records')
+                    source_mapping = df_conformed_mapping[df_conformed_mapping['Source_Name'] == src].to_dict('records')
                     if source_mapping and force_this:
-                        logger.info(f"Generating conformed merge proc for {source} -> {conformed_target}")
+                        logger.info(f"Generating conformed merge proc for {src} -> {conformed_target}")
                         merge_ddl = generate_fact_to_conformed_merge_ddl(
-                            source_name=source,
+                            source_name=src,
                             ods_table=staging_table,
                             conformed_table=conformed_target,
                             mapping_rows=source_mapping
@@ -267,13 +271,19 @@ def process_etl_config(force_ddl: bool = False):
             # Common checkpoint update
             execute_proc(
                 "ETL.SP_Update_Source_Imports_Last_Checked",
-                params_dict={"@SourceName": source, "@LastChecked": now_str},
+                params_dict={"@SourceName": src, "@LastChecked": now_str},
             )
 
         cursor.close()
         conn.close()
 
         apply_ddl_from_run()
+
+        # First load: run data processing to verify config (admin can inspect errors)
+        if run_first_load:
+            logger.info("Running first load to verify config...")
+            from src.etl_orchestrator import run_etl
+            run_etl(sources=None, force_ddl=force_ddl)
 
         end_time = datetime.now()
         row_count = len(df_imports) + len(df_mapping) + len(df_conformed_mapping)
@@ -312,4 +322,5 @@ def process_etl_config(force_ddl: bool = False):
         raise
 
 if __name__ == "__main__":
+    # Prefer: python -m src.admin.load_config (CLI with --force-ddl, --source)
     process_etl_config()

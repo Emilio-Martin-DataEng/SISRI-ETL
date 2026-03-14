@@ -1,11 +1,8 @@
-"""Simple console UI for running SISRI ETL flows.
+"""Simple console UI for SISRI ETL.
 
-This wraps the existing orchestrator and DDL helpers with a small
-menu so you can:
-- Refresh metadata / generate DDL
-- Apply approved DDL scripts
-- Run full ETL for all or selected sources
-- Quickly inspect available sources
+Roles:
+- Admin (1, 2): Config load, DDL – rarely used (new source take-on)
+- Operator (3, 4): Data processing, list sources – normal runs
 """
 
 from datetime import datetime
@@ -62,13 +59,13 @@ def _input_sources():
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
-def action_refresh_metadata_and_generate_ddl():
-    print("\n[1] Refreshing ETL config and generating DDL...")
+def action_load_config():
+    print("\n[1] Admin: Load config from Excel, update metadata, first load...")
+    force_ddl = input("Force DDL (format files + apply)? [y/N]: ").strip().lower().startswith("y")
     start = datetime.now()
-    process_etl_config()
+    process_etl_config(force_ddl=force_ddl)
     duration = (datetime.now() - start).total_seconds()
-    print("Review scripts in DW_DDL/generated/, copy approved ones to DW_DDL/run/, then run option 2 to apply.")
-    print(f"Completed in {duration:.2f}s.")
+    print(f"Completed in {duration:.2f}s. Inspect logs for any errors.")
 
 
 def action_apply_ddl():
@@ -85,16 +82,12 @@ def action_apply_ddl():
     print("DDL apply step finished.")
 
 
-def action_run_full_etl():
-    print("\n[3] Run full ETL (config + all active business sources).")
+def action_run_etl():
+    print("\n[3] Operator: Run data processing (assumes metadata is correct).")
     sources = _input_sources()
-    force_ddl = input("Force DDL generation? [y/N]: ").strip().lower().startswith("y")
-    refresh_meta = input("Refresh ETL metadata first? [Y/n]: ").strip().lower()
-    refresh_meta_flag = refresh_meta != "n"
-
     print("Starting ETL ...")
     start = datetime.now()
-    run_etl(sources, force_ddl, refresh_meta_flag)
+    run_etl(sources=sources)
     duration = (datetime.now() - start).total_seconds()
     print(f"ETL run finished in {duration:.2f}s. Check logs/etl_orchestrator.log for details.")
 
@@ -102,19 +95,19 @@ def action_run_full_etl():
 def main_menu():
     while True:
         _print_header()
-        print("1) Refresh config + generate DDL")
-        print("2) Apply DDL from run/ folder")
-        print("3) Run full ETL (config + sources)")
+        print("1) [Admin] Load config + metadata + first load")
+        print("2) [Admin] Apply DDL from run/ folder")
+        print("3) [Operator] Run data processing")
         print("4) List sources")
         print("0) Exit")
 
         choice = input("Select an option: ").strip()
         if choice == "1":
-            action_refresh_metadata_and_generate_ddl()
+            action_load_config()
         elif choice == "2":
             action_apply_ddl()
         elif choice == "3":
-            action_run_full_etl()
+            action_run_etl()
         elif choice == "4":
             _list_sources()
         elif choice == "0":

@@ -5,6 +5,19 @@
 
 ---
 
+## 0. Role Separation (Entry Points)
+
+| Role | Entry Point | When |
+|------|-------------|------|
+| **Admin** | `python -m src.admin.load_config` | New source take-on; config/metadata/DDL changes |
+| **Operator** | `python -m src.etl_orchestrator` | Normal data processing runs |
+
+- **Admin:** `--force-ddl` (format files + DDL), `--source` (scope to one), `--no-first-load`
+- **Operator:** `--sources` (selective run); `--test full` (scenario tests); no config loading
+- **After config changes:** Run `python -m src.etl_orchestrator --test full`
+
+---
+
 ## 1. Current State Summary
 
 ### 1.1 Database & Metadata

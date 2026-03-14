@@ -3,9 +3,14 @@
 ## Project Summary
 Metadata-driven Kimball-style ETL for SQL Server. Excel/CSV sources, BCP loading. Schemas: `ODS` (staging), `DW` (dims/facts), `ETL` (metadata, audit, conformed staging).
 
+## Entry Points (role separation)
+- **Operator:** `python -m src.etl_orchestrator` – data processing only (assumes metadata correct)
+- **Admin:** `python -m src.admin.load_config` – config load, metadata, DDL, first load (rare: new source take-on)
+
 ## Key Paths
-- `src/etl_orchestrator.py` – main entry
-- `src/staging/etl_config.py` – config load, DDL generation trigger
+- `src/etl_orchestrator.py` – Operator: data processing
+- `src/admin/load_config.py` – Admin: config loader CLI
+- `src/staging/etl_config.py` – Admin: config load logic
 - `src/staging/source_import.py` – dimension sources
 - `src/staging/fact_sales_import.py` – fact sources
 - `src/dw/ddl_generator.py` – DDL generator (ODS, DW, merge procs, conformed merge)
@@ -23,14 +28,20 @@ Metadata-driven Kimball-style ETL for SQL Server. Excel/CSV sources, BCP loading
 
 ## Common Commands
 ```bash
-# Full ETL with metadata refresh
-python -m src.etl_orchestrator --refresh-metadata --force-ddl
-
-# Specific sources
+# Operator: data processing (normal runs)
+python -m src.etl_orchestrator
 python -m src.etl_orchestrator --sources Brands Places
 
-# Smoke tests (Check-In-Checklist)
+# Admin: config load (new source take-on only)
+python -m src.admin.load_config
+python -m src.admin.load_config --force-ddl
+python -m src.admin.load_config --force-ddl --source Sales_Format_1
+
+# Unit tests (no DB)
 python -m pytest tests/test_smoke.py tests/test_ddl_generator.py -v
+
+# Integrated scenario tests (requires DB) – run after any config sheet changes
+python -m src.etl_orchestrator --test full
 ```
 
 ## DDL Rules

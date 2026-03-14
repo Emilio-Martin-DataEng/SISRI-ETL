@@ -109,10 +109,13 @@ print(f'Added {source_name} to Excel config')
 "
 ```
 
-### **Step 3: Test the New Source**
+### **Step 3: Load Config and Test**
 ```bash
-# Test ODS loading only
-python -m src.etl_orchestrator --sources YourSourceName --refresh-metadata --force-ddl
+# Admin: load config, apply DDL, first load
+python -m src.admin.load_config --force-ddl
+
+# Run integrated scenario tests (required after config changes)
+python -m src.etl_orchestrator --test full
 
 # If successful, add conformed staging mappings (for Fact_Sales only)
 # See Step 4 below...
@@ -291,6 +294,7 @@ The system automatically archives Excel configs with timestamps:
 - [ ] Data loaded without errors
 - [ ] For Fact_Sales: Conformed staging works
 - [ ] All SKs properly tracked
+- [ ] **Run scenario tests:** `python -m src.etl_orchestrator --test full`
 
 ## 🚨 Troubleshooting
 
@@ -302,10 +306,13 @@ The system automatically archives Excel configs with timestamps:
 
 ### **Quick Fixes:**
 ```bash
-# Force refresh metadata
-python -m src.etl_orchestrator --refresh-metadata --force-ddl
+# Admin: load config, force DDL
+python -m src.admin.load_config --force-ddl
 
-# Test single source
+# Run scenario tests (required after config changes)
+python -m src.etl_orchestrator --test full
+
+# Operator: test single source
 python -m src.etl_orchestrator --sources YourSourceName
 
 # Clear and retry

@@ -4,6 +4,15 @@
 
 ---
 
+## When to Run Scenario Tests
+
+**Run `--test full` after any config sheet changes:**
+- Source_Imports, Source_File_Mapping, DW_Mapping_And_Transformations
+- New source added, column mapping changed, conformed mapping updated
+- After `python -m src.admin.load_config` (metadata refresh)
+
+---
+
 ## 1. Unit Tests
 
 **Core tests (no DB, always run):**
@@ -49,17 +58,17 @@ ruff check src/
 
 ---
 
-## 4. Quick ETL Smoke (optional, requires DB)
+## 4. Integrated Scenario Tests (requires DB)
 
-**When DB is available:**
+**Required after config sheet changes; recommended before every check-in:**
 
 ```bash
-# Full ETL: all sources, refresh metadata, force DDL
-python -m src.etl_orchestrator --refresh-metadata --force-ddl
+python -m src.etl_orchestrator --test full
 ```
 
-- **Goal:** Config loads; all active sources process without error
-- **Note:** Fact_Sales pipeline uses temp-table conformed merge (see docs/Next-Steps-Plan.md)
+- **Goal:** Operator + Admin entry points, selective sources, Fact_Conformed
+- **Runs:** 6 scenarios (help, Brands, Admin config, force-ddl scope, Fact_Conformed)
+- **When:** After editing ETL_Config.xlsx (Source_Imports, Source_File_Mapping, DW_Mapping_And_Transformations)
 
 ---
 
@@ -86,7 +95,7 @@ python tools/monitoring/check_merge_logic.py
 | 1. Tests | `python -m pytest tests/test_smoke.py tests/test_ddl_generator.py -v` | Yes |
 | 2. Imports | `python -c "from src.etl_orchestrator import run_etl; from src.staging.etl_config import process_etl_config; from src.dw.ddl_generator import apply_ddl_from_run; from src.utils.db_ops import truncate_table, execute_proc; print('Imports OK')"` | Yes |
 | 3. Lint | `ruff check src/` (if configured) | Optional |
-| 4. Smoke | `python -m src.etl_orchestrator --refresh-metadata --force-ddl` | Optional (DB) |
+| 4. Scenarios | `python -m src.etl_orchestrator --test full` | Required after config changes |
 | 5. Monitoring | `python tools/monitoring/check_*.py` | Optional (DB) |
 
 ---

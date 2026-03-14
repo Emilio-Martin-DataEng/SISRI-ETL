@@ -43,7 +43,8 @@
 
 7. **[Check-In-Checklist.md](Check-In-Checklist.md)** - Pre-commit validation
    - ✅ Unit tests, import verification
-   - ✅ Optional smoke run and monitoring scripts
+   - ✅ Integrated scenario tests (`--test full`) – **required after config sheet changes**
+   - ✅ Optional monitoring scripts
 
 8. **[Next-Steps-Plan.md](Next-Steps-Plan.md)** - Roadmap and next steps
    - ✅ Fix Fact_Sales pipeline (SP_Merge_Fact_Sales_ODS_to_Conformed, Date_SK)

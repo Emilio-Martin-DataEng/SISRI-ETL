@@ -28,40 +28,41 @@ pip install -r requirements.txt
 # Interactive console (recommended for first-time setup)
 python -m src.ui.console_app
 
-# Full ETL run (CLI)
+# Operator: data processing (normal runs)
 python -m src.etl_orchestrator
-
-# Specific sources only
 python -m src.etl_orchestrator --sources Brands Places
 
-# Force DDL regeneration (schema changes)
-python -m src.etl_orchestrator --force-ddl
-
-# Refresh metadata only
-python -m src.etl_orchestrator --refresh-metadata
+# Admin: config load (new source take-on only)
+python -m src.admin.load_config
+python -m src.admin.load_config --force-ddl
+python -m src.admin.load_config --force-ddl --source Sales_Format_1
 ```
 
 ## 🏗️ **Architecture Overview**
 
 ### **Core Components**
 
-1. **ETL Orchestrator** (`src/etl_orchestrator.py`)
-   - Coordinates entire ETL pipeline
-   - Manages audit trail and error handling
+1. **ETL Orchestrator** (`src/etl_orchestrator.py`) – Operator
+   - Data processing only; reads from Dim_Source_Imports
+   - Assumes metadata is correct (no config loading)
    - Supports selective source processing
 
-2. **Source Import Engine** (`src/staging/source_import.py`)
+2. **Config Loader** (`src/admin/load_config.py`) – Admin
+   - Excel → metadata, optional DDL, first load
+   - Used rarely (new dataset/source take-on)
+
+3. **Source Import Engine** (`src/staging/source_import.py`)
    - **File-by-file processing** with individual SK tracking
    - BCP bulk loading with dynamic format files
    - Duplicate detection and rejection logging
    - Column mapping and sanitization
 
-3. **Configuration Manager** (`src/staging/etl_config.py`)
+4. **Configuration Manager** (`src/staging/etl_config.py`) – Admin
    - Metadata-driven source configuration
    - Dynamic DDL generation
    - Mapping table management
 
-4. **Database Operations** (`src/utils/db_ops.py`)
+5. **Database Operations** (`src/utils/db_ops.py`)
    - Stored procedure execution
    - Format file generation
    - Archive record management

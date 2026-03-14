@@ -21,11 +21,14 @@ The SISRI ETL system loads Excel data into a SQL Server data warehouse with **fi
 
 Activate the virtual environment before running any commands.
 
-## 2. Refresh Metadata  
+## 2. Refresh Metadata (Admin)
 (Required after changing `ETL_Config.xlsx` – mapping, new sources, paths, etc.)
 
 Run:  
-`python -m src.staging.etl_config`
+`python -m src.admin.load_config`
+
+**After any config change, run scenario tests:**
+`python -m src.etl_orchestrator --test full`
 
 What it does:
 - Checks for `ETL_Config.xlsx`
@@ -44,11 +47,10 @@ Basic command (processes all active business sources):
 
 ### **Common Options**
 
-| Flag                  | Description                                      | Example                                      |
-|-----------------------|--------------------------------------------------|----------------------------------------------|
-| `--sources`           | Specific sources only                            | `--sources Places Products`                  |
-| `--force-ddl`         | Force regeneration of tables & procs             | `--force-ddl`                                |
-| `--refresh-metadata`  | Also refresh metadata before data load           | `--refresh-metadata`                         |
+| Flag       | Description              | Example                      |
+|------------|--------------------------|------------------------------|
+| `--sources`| Specific sources only    | `--sources Places Products`  |
+| `--test`   | Run scenario tests       | `--test full`                |
 
 ### **Examples**
 
@@ -58,8 +60,8 @@ All sources (normal daily run):
 Only Places and Brands:  
 `python -m src.etl_orchestrator --sources Places Brands`
 
-Full refresh + force DDL:  
-`python -m src.etl_orchestrator --refresh-metadata --force-ddl`
+Run scenario tests (after config changes):  
+`python -m src.etl_orchestrator --test full`
 
 ## 4. What Happens During a Run
 

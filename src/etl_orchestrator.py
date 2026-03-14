@@ -1,12 +1,13 @@
 # src/etl_orchestrator.py
+"""ETL data processing (System Operator). Reads from Dim_Source_Imports; no config loading."""
 
 from datetime import datetime
 import argparse
 import shutil
+import sys
 from pathlib import Path
 
 from src.config import PROJECT_ROOT
-from src.staging.etl_config import process_etl_config
 from src.staging.source_import import process_source
 from src.staging.fact_sales_import import process_fact_sales
 from src.utils.db_ops import (
@@ -15,11 +16,10 @@ from src.utils.db_ops import (
     execute_proc,
     get_connection,
 )
-from src.dw.ddl_generator import apply_ddl_from_run
 from src.utils.logging_config import setup_logging
 
 
-def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
+def run_etl(sources=None, force_ddl=False):
     logger = setup_logging("etl_orchestrator")
     start_time = datetime.now()
     
@@ -40,13 +40,6 @@ def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
         pattern='Full ETL Run'
     )
     logger.info(f"Full ETL run started at {start_time}")
-
-    if refresh_metadata or force_ddl:
-        logger.info("Refreshing ETL metadata (config load)...")
-        process_etl_config()  # config loader now handles DDL generation internally
-    else:
-        logger.info("Skipping ETL config load (use --refresh-metadata to force)")
-
 
     if sources is None:
         conn = get_connection()
@@ -76,7 +69,7 @@ def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
         cursor.close()
         conn.close()
 
-    logger.info(f"Processing {len(sources_rows)} sources (force DDL: {force_ddl}, refresh metadata: {refresh_metadata}).")
+    logger.info(f"Processing {len(sources_rows)} sources.")
 
     total_rows = 0
     for row in sources_rows:
@@ -159,8 +152,6 @@ def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
             logger.error("Stopping execution. Restart from failed source.")
             break
 
-    # DDL apply is now controlled by etl_config / console UI; orchestrator just logs
-    logger.info("DDL apply (if any) should be driven by config/console; skipping automatic apply here.")
 
     end_time = datetime.now()
     log_audit_source_import(
@@ -169,20 +160,25 @@ def run_etl(sources=None, force_ddl=False, refresh_metadata=False):
         start_time=start_time,
         end_time=end_time,
         total_row_count=total_rows,
-        total_file_count = len(sources) if sources is not None else 0,
+        total_file_count=len(sources_rows),
         process_status='Success',
         pattern='Full ETL Run'
     )
     logger.info(f"Full ETL run complete at {end_time}")
     logger.info(f"Duration: {(end_time - start_time).total_seconds():.2f}s")
     logger.info(f"Total rows processed: {total_rows}")
-    logger.info(f"Processed sources: {sources}")
+    logger.info(f"Processed {len(sources_rows)} sources")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="SISRI ETL Orchestrator")
-    parser.add_argument("--sources", nargs="+", default=None, help="Specific sources to process")
-    parser.add_argument("--force-ddl", action="store_true", help="Force DDL generation")
-    parser.add_argument("--refresh-metadata", action="store_true", help="Refresh ETL config tables (Source_Imports & Source_File_Mapping)")
+    parser = argparse.ArgumentParser(
+        description="SISRI ETL – Data processing (System Operator). Assumes metadata is correct."
+    )
+    parser.add_argument("--sources", nargs="+", default=None, help="Specific sources to process (default: all active)")
+    parser.add_argument("--test", choices=["full"], default=None, help="Run integrated scenario tests (full)")
     args = parser.parse_args()
 
-    run_etl(args.sources, args.force_ddl, args.refresh_metadata)
+    if args.test == "full":
+        from tests.test_scenarios import main as run_scenario_tests
+        sys.exit(run_scenario_tests())
+
+    run_etl(sources=args.sources)
